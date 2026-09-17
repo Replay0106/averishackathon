@@ -1,0 +1,356 @@
+<title>NavisAI Pipeline</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --bg:#0B1220; --panel:#111A2E; --panel-2:#0F1729; --line:#25324A;
+  --ink:#F1F5F9; --ink-dim:#93A2BC; --ink-faint:#5C6C8A;
+  --brand:#F37021; --brand-2:#FF8A3D; --brand-deep:#C4551A;
+  --mint:#22C77A; --mint-bg:#0E2A20; --coral:#EF5A52; --coral-bg:#2B1418;
+  --card-radius:16px;
+}
+:root[data-theme="light"]{
+  --bg:#F6F4EF; --panel:#FFFFFF; --panel-2:#FBF9F4; --line:#E4DFD3;
+  --ink:#1B1B18; --ink-dim:#5B584C; --ink-faint:#8B876F;
+  --mint:#178A54; --mint-bg:#E6F6EC; --coral:#C23B33; --coral-bg:#FBE9E6;
+}
+*{box-sizing:border-box;}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans",system-ui,sans-serif;
+  padding-inline:20px; padding-block:44px;
+  line-height:1.5;
+}
+h1,h2,h3{font-family:"Sora",system-ui,sans-serif; text-wrap:balance; margin:0;}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace;}
+.wrap{max-width:1080px; margin-inline:auto;}
+
+/* ---------- Hero ---------- */
+.hero{display:flex; flex-direction:column; gap:14px; margin-bottom:56px;}
+.eyebrow{
+  display:inline-flex; align-items:center; gap:8px; width:fit-content;
+  font-family:"IBM Plex Mono",monospace; font-size:12.5px; letter-spacing:.08em;
+  color:var(--brand-2); background:color-mix(in srgb, var(--brand) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--brand) 40%, transparent);
+  padding:5px 12px; border-radius:999px; text-transform:uppercase;
+}
+.hero h1{font-size:clamp(30px,4.4vw,46px); font-weight:800; letter-spacing:-0.01em;}
+.hero h1 span{color:var(--brand-2);}
+.hero p{max-width:62ch; color:var(--ink-dim); font-size:16.5px;}
+.hero-strip{
+  display:flex; gap:10px; flex-wrap:wrap; margin-top:6px;
+}
+.pill{
+  font-size:12.5px; font-family:"IBM Plex Mono",monospace; color:var(--ink-dim);
+  border:1px solid var(--line); padding:5px 11px; border-radius:999px; background:var(--panel);
+}
+
+/* ---------- Section heads ---------- */
+.section-head{margin-bottom:20px;}
+.section-head .kicker{
+  font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.08em;
+  color:var(--ink-faint); text-transform:uppercase; margin-bottom:6px;
+}
+.section-head h2{font-size:24px; font-weight:700;}
+.section-head p{color:var(--ink-dim); font-size:15px; margin-top:6px; max-width:70ch;}
+
+section{margin-bottom:60px;}
+
+/* ---------- Pipeline ---------- */
+.pipeline{display:flex; flex-direction:column; gap:0;}
+.stage-row{
+  display:grid; grid-template-columns:64px 1fr; gap:18px; position:relative;
+}
+.stage-rail{display:flex; flex-direction:column; align-items:center;}
+.stage-num{
+  width:44px; height:44px; border-radius:12px; background:var(--panel);
+  border:1.5px solid var(--brand); color:var(--brand-2);
+  font-family:"Sora",sans-serif; font-weight:700; font-size:17px;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.stage-line{width:2px; flex:1; background:linear-gradient(var(--brand) 0 0) center/2px 8px repeat-y; opacity:.55; min-height:26px;}
+.stage-row:last-child .stage-line{display:none;}
+.stage-card{
+  background:var(--panel); border:1px solid var(--line); border-radius:var(--card-radius);
+  padding:20px 22px; margin-bottom:26px;
+}
+.stage-top{display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:10px;}
+.stage-title{font-family:"Sora",sans-serif; font-weight:700; font-size:18.5px;}
+.stage-tag{
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-faint);
+  border:1px solid var(--line); padding:3px 9px; border-radius:999px; white-space:nowrap;
+}
+.flow{
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:10px;
+  margin:14px 0 12px 0;
+}
+.flow-box{
+  background:var(--panel-2); border:1px solid var(--line); border-radius:10px;
+  padding:10px 12px; font-size:13px; color:var(--ink-dim);
+}
+.flow-box b{color:var(--ink); display:block; font-family:"IBM Plex Mono",monospace; font-size:12px; letter-spacing:.02em; margin-bottom:3px;}
+.flow-arrow{color:var(--brand-2); font-size:18px; text-align:center;}
+.stage-desc{color:var(--ink-dim); font-size:14.5px; margin-top:8px;}
+.stage-desc strong{color:var(--ink); font-weight:600;}
+.chiplist{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;}
+.chip{
+  font-size:12px; font-family:"IBM Plex Mono",monospace; color:var(--brand-2);
+  background:color-mix(in srgb, var(--brand) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  padding:4px 10px; border-radius:8px;
+}
+
+/* ---------- Flip demo ---------- */
+.flip-wrap{
+  display:grid; grid-template-columns:1fr auto 1fr; gap:0; align-items:stretch;
+}
+@media (max-width:640px){ .flip-wrap{grid-template-columns:1fr;} .flip-mid{transform:rotate(90deg); padding-block:8px;} }
+.flip-panel{
+  border-radius:var(--card-radius); padding:20px 22px; border:1px solid var(--line);
+}
+.flip-panel.before{background:var(--coral-bg); border-color:color-mix(in srgb, var(--coral) 45%, var(--line));}
+.flip-panel.after{background:var(--mint-bg); border-color:color-mix(in srgb, var(--mint) 45%, var(--line));}
+.flip-mid{display:flex; align-items:center; justify-content:center; padding-inline:18px; color:var(--brand-2); font-size:26px;}
+.flip-label{
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase;
+  display:flex; align-items:center; gap:7px; margin-bottom:12px;
+}
+.dot{width:8px; height:8px; border-radius:50%; display:inline-block;}
+.dot.coral{background:var(--coral); box-shadow:0 0 8px color-mix(in srgb, var(--coral) 70%, transparent);}
+.dot.mint{background:var(--mint); box-shadow:0 0 8px color-mix(in srgb, var(--mint) 70%, transparent);}
+.flip-row{display:flex; justify-content:space-between; font-size:14px; padding:7px 0; border-bottom:1px dashed color-mix(in srgb, var(--ink-faint) 35%, transparent);}
+.flip-row:last-child{border-bottom:none;}
+.flip-row span:first-child{color:var(--ink-dim);}
+.flip-row span:last-child{font-family:"IBM Plex Mono",monospace; font-weight:600;}
+.before .flip-row span:last-child{color:var(--coral);}
+.after .flip-row span:last-child{color:var(--mint);}
+.flip-caption{color:var(--ink-dim); font-size:13.5px; margin-top:14px;}
+.trigger-note{
+  text-align:center; font-family:"IBM Plex Mono",monospace; font-size:12.5px; color:var(--brand-2);
+  margin:18px 0 4px 0;
+}
+
+/* ---------- Stat strip ---------- */
+.stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px;}
+@media (max-width:760px){ .stats{grid-template-columns:repeat(2,1fr);} }
+.stat{
+  background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--brand);
+  border-radius:12px; padding:16px 16px;
+}
+.stat .label{font-size:11.5px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; font-family:"IBM Plex Mono",monospace;}
+.stat .value{font-family:"Sora",sans-serif; font-weight:800; font-size:24px; color:var(--brand-2); margin:5px 0 3px 0; font-variant-numeric:tabular-nums;}
+.stat .sub{font-size:12.5px; color:var(--ink-dim);}
+
+/* ---------- Who / why ---------- */
+.grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+@media (max-width:700px){.grid-2{grid-template-columns:1fr;}}
+.info-card{background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px 22px;}
+.info-card h3{font-size:16.5px; margin-bottom:8px;}
+.info-card p{color:var(--ink-dim); font-size:14.5px;}
+.info-card ul{margin:10px 0 0 0; padding-left:18px; color:var(--ink-dim); font-size:14px;}
+.info-card li{margin-bottom:6px;}
+
+footer{color:var(--ink-faint); font-size:12.5px; text-align:center; margin-top:20px;}
+</style>
+
+<div class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">● how it works</span>
+    <h1>From a folder of shipping PDFs<br>to a <span>bank-ready</span> decision — in four stages.</h1>
+    <p>NavisAI reads a shipment's paper trail, cross-checks every figure against itself, checks it against
+      international trade law, and hands operations a ready-to-send fix — all before a discrepancy becomes
+      a bank rejection or a demurrage fee.</p>
+    <div class="hero-strip">
+      <span class="pill">Input: Invoice · Packing List · B/L · Letter of Credit</span>
+      <span class="pill">Output: risk score + $ exposure + ready-to-send corrections</span>
+      <span class="pill">Runtime: ~4 seconds</span>
+    </div>
+  </div>
+
+  <section>
+    <div class="section-head">
+      <div class="kicker">the pipeline</div>
+      <h2>Four stages, one continuous run</h2>
+      <p>Each stage takes the previous stage's output as its input. Nothing is re-entered by hand —
+        the shipment reference flows straight through from ingestion to dispatch.</p>
+    </div>
+
+    <div class="pipeline">
+
+      <div class="stage-row">
+        <div class="stage-rail"><div class="stage-num">1</div><div class="stage-line"></div></div>
+        <div class="stage-card">
+          <div class="stage-top">
+            <div class="stage-title">Ingestion &amp; Adaptive Audit</div>
+            <div class="stage-tag">reads the documents</div>
+          </div>
+          <div class="flow">
+            <div class="flow-box"><b>IN</b>4 PDFs — Invoice, Packing List, B/L, LC</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><b>OUT</b>Structured fields + a cross-doc audit</div>
+          </div>
+          <p class="stage-desc">Each PDF is read and <strong>classified</strong>: routine paperwork (invoice,
+            packing list) goes to a fast extraction pass; dense legal text (LC clauses, origin rules) goes to
+            an extended-reasoning pass. A deterministic checker then compares every shared field — container
+            IDs, weights, HS codes, ports — across all four documents at once.</p>
+          <div class="chiplist">
+            <span class="chip">Adaptive Model Router</span>
+            <span class="chip">~60% compute saved</span>
+            <span class="chip">risk score · $ exposure</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-row">
+        <div class="stage-rail"><div class="stage-num">2</div><div class="stage-line"></div></div>
+        <div class="stage-card">
+          <div class="stage-top">
+            <div class="stage-title">Visual Redline Diff</div>
+            <div class="stage-tag">shows what's wrong</div>
+          </div>
+          <div class="flow">
+            <div class="flow-box"><b>IN</b>Every mismatch found in Stage 1</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><b>OUT</b>Side-by-side correction, ready to apply</div>
+          </div>
+          <p class="stage-desc">For each mismatch, NavisAI lines up the two conflicting values —
+            <span style="color:var(--coral)">the wrong one struck through in red</span>, the
+            <span style="color:var(--mint)">verified fix highlighted in green</span> — the same way a lawyer
+            redlines a contract. One toggle applies the fix to the working document set in memory, no re-upload
+            needed.</p>
+          <div class="chiplist">
+            <span class="chip">e.g. MSCU9021432 → MSCU9021431</span>
+            <span class="chip">e.g. 51,900 kg → 52,400 kg</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-row">
+        <div class="stage-rail"><div class="stage-num">3</div><div class="stage-line"></div></div>
+        <div class="stage-card">
+          <div class="stage-top">
+            <div class="stage-title">Cross-Border Statutory Gate</div>
+            <div class="stage-tag">checks it's legal</div>
+          </div>
+          <div class="flow">
+            <div class="flow-box"><b>IN</b>Corrected document set</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><b>OUT</b>Pass / fail per regulatory framework</div>
+          </div>
+          <p class="stage-desc">Independent of whether the numbers match, NavisAI checks the shipment against
+            the rules a bank or customs officer would actually cite: <strong>ICC UCP 600</strong> Articles 14
+            &amp; 18 (document examination and invoice value), <strong>MITI / ATIGA Form D</strong>
+            rules of origin, and destination customs standards such as <strong>Port of Rotterdam</strong>
+            clearance rules.</p>
+          <div class="chiplist">
+            <span class="chip">UCP 600 Art. 14</span>
+            <span class="chip">UCP 600 Art. 18</span>
+            <span class="chip">ATIGA Form D</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="stage-row">
+        <div class="stage-rail"><div class="stage-num">4</div></div>
+        <div class="stage-card">
+          <div class="stage-top">
+            <div class="stage-title">Navis Dispatch Engine</div>
+            <div class="stage-tag">acts on it</div>
+          </div>
+          <div class="flow">
+            <div class="flow-box"><b>IN</b>Every unresolved issue, tagged by type</div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-box"><b>OUT</b>Drafted message, queued and dispatched</div>
+          </div>
+          <p class="stage-desc">Every remaining issue is routed to the party who can actually fix it — a
+            <strong>carrier amendment</strong> email to the shipping line, a <strong>trade-finance alert</strong>
+            to the bank desk, or a <strong>customs broker</strong> inquiry — each pre-drafted and queued with a
+            recipient and a timestamp, ready for one-click send.</p>
+          <div class="chiplist">
+            <span class="chip">🚢 Carrier Amendment</span>
+            <span class="chip">🏦 Trade Finance Alert</span>
+            <span class="chip">📋 Customs Broker</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div class="kicker">what a fix looks like</div>
+      <h2>Applying a correction updates the whole dashboard live</h2>
+      <p>This isn't a demo trick — it's the actual state change. Resolving the underlying documents flips every
+        downstream panel at once, because they all read from the same live audit record.</p>
+    </div>
+
+    <div class="flip-wrap">
+      <div class="flip-panel before">
+        <div class="flip-label"><span class="dot coral"></span>before the fix</div>
+        <div class="flip-row"><span>Bank presentation</span><span>At risk</span></div>
+        <div class="flip-row"><span>Risk score</span><span>64 / 100</span></div>
+        <div class="flip-row"><span>Discrepancies</span><span>3 found</span></div>
+        <div class="flip-row"><span>$ exposure</span><span>$750.00</span></div>
+        <div class="flip-caption">Container typo + weight mismatch, flagged across two documents.</div>
+      </div>
+      <div class="flip-mid">→</div>
+      <div class="flip-panel after">
+        <div class="flip-label"><span class="dot mint"></span>after the fix</div>
+        <div class="flip-row"><span>Bank presentation</span><span>Ready</span></div>
+        <div class="flip-row"><span>Risk score</span><span>0 / 100</span></div>
+        <div class="flip-row"><span>Discrepancies</span><span>0 found</span></div>
+        <div class="flip-row"><span>$ exposure</span><span>$0.00</span></div>
+        <div class="flip-caption">Every downstream stage re-checks itself — no manual re-run needed.</div>
+      </div>
+    </div>
+    <div class="trigger-note">⚡ triggered by one click: "Execute Carrier Amendment &amp; Re-Audit"</div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <div class="kicker">the payoff</div>
+      <h2>Why this matters to the business</h2>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">Manual audit time</div><div class="value">45 min → 4s</div><div class="sub">per shipment, before vs. after</div></div>
+      <div class="stat"><div class="label">Risk avoided</div><div class="value">$150–450</div><div class="sub">bank fees + demurrage, per shipment</div></div>
+      <div class="stat"><div class="label">Compute saved</div><div class="value">~60%</div><div class="sub">fast-route vs. all-reasoning extraction</div></div>
+      <div class="stat"><div class="label">Cost per audit</div><div class="value">$0.0016</div><div class="sub">average model spend per shipment</div></div>
+    </div>
+  </section>
+
+  <section style="margin-bottom:20px;">
+    <div class="section-head">
+      <div class="kicker">context</div>
+      <h2>Who uses this, and on what</h2>
+    </div>
+    <div class="grid-2">
+      <div class="info-card">
+        <h3>Who's looking at this screen</h3>
+        <p>A trade-operations auditor at a shared-services desk, working through a queue of shipments before
+          documents go to the bank for Letter of Credit presentation.</p>
+        <ul>
+          <li>They don't want to hunt for a typo across four PDFs by eye.</li>
+          <li>They need to know <em>which law</em> a mismatch breaks, not just that it exists.</li>
+          <li>They need something they can send — not just a red flag.</li>
+        </ul>
+      </div>
+      <div class="info-card">
+        <h3>What's actually being read</h3>
+        <p>Real shipment paperwork for commodity exports — palm oil, pulp &amp; paper — the kind where a
+          single container ID or weight figure has to match, word for word, across every document in the set.</p>
+        <ul>
+          <li>Commercial Invoice — declared value, HS code, container</li>
+          <li>Packing List — gross / net weight, container</li>
+          <li>Bill of Lading — carrier's record of the same fields</li>
+          <li>Letter of Credit — the bank's binding conditions</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>NavisAI · Averis Global Business Services — Autonomous Shipping Documentation &amp; Trade Compliance Copilot</footer>
+
+</div>

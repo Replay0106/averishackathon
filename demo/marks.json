@@ -1,0 +1,23 @@
+{
+  "01_intro": 7.642,
+  "02_sidebar": 22.543,
+  "03_load_discrepant": 32.386,
+  "04_stage1_running": 40.943,
+  "05_stage1_result": 74.543,
+  "06_router_detail": 85.894,
+  "07_health_hub": 97.175,
+  "08_discrepancy_tab": 110.856,
+  "09_redline": 122.737,
+  "10_apply_toggle": 136.268,
+  "11_statutory_gate": 146.49,
+  "12_dispatch_engine": 160.771,
+  "13_scheduler": 175.241,
+  "14_execute_flip": 187.843,
+  "15_flip_result": 195.964,
+  "16_statutory_recheck": 207.215,
+  "17_cross_comparison": 216.546,
+  "18_export_coo": 227.298,
+  "19_json_export": 236.899,
+  "20_ask_navis": 246.4,
+  "21_outro": 260.601
+}
