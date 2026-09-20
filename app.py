@@ -35,7 +35,33 @@ from sdoc_loader import InboxLoader
 from sdoc_classifier import EmailClassifier
 from sdoc_extractor import FieldExtractor
 from sdoc_reconciler import DocumentReconciler
-from sdoc_pipeline import run_pipeline, update_submission_record
+
+try:
+    from sdoc_pipeline import run_pipeline, update_submission_record
+except ImportError:
+    import importlib
+    import sdoc_pipeline
+    importlib.reload(sdoc_pipeline)
+    try:
+        from sdoc_pipeline import run_pipeline, update_submission_record
+    except ImportError:
+        from sdoc_pipeline import run_pipeline
+        def update_submission_record(submission_path: str, email_id: str, updated_record: dict) -> bool:
+            try:
+                from pathlib import Path
+                p = Path(submission_path)
+                data = {}
+                if p.exists():
+                    with open(p, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                existing = data.get(email_id, {})
+                existing.update(updated_record)
+                data[email_id] = existing
+                with open(p, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2)
+                return True
+            except Exception:
+                return False
 
 load_dotenv()
 
