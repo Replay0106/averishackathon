@@ -174,6 +174,31 @@ def run_pipeline(bundle_dir: str, output_path: str = "submission.json", server_u
     return submission
 
 
+def update_submission_record(submission_path: str, email_id: str, updated_record: Dict[str, Any]) -> bool:
+    """
+    Updates a single email record in submission.json and persists it to disk.
+    Ensures human corrections (approvals, escalations, edits) are durable.
+    """
+    try:
+        p = Path(submission_path)
+        data = {}
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        
+        # Merge or update record
+        existing = data.get(email_id, {})
+        existing.update(updated_record)
+        data[email_id] = existing
+        
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error persisting update for {email_id} to {submission_path}: {e}")
+        return False
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NavisAI SDOC Pipeline Runner")
     local_bundle = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sdoc-hackathon-bundle")

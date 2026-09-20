@@ -35,12 +35,12 @@ from sdoc_loader import InboxLoader
 from sdoc_classifier import EmailClassifier
 from sdoc_extractor import FieldExtractor
 from sdoc_reconciler import DocumentReconciler
-from sdoc_pipeline import run_pipeline
+from sdoc_pipeline import run_pipeline, update_submission_record
 
 load_dotenv()
 
-FAST_MODEL = "gemini-3.6-flash"
-REASONING_MODEL = "gemini-3.6-flash"
+FAST_MODEL = "gemini-3.5-flash"
+REASONING_MODEL = "gemini-3.5-flash"
 LOCAL_BUNDLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sdoc-hackathon-bundle")
 BUNDLE_DEFAULT_DIR = LOCAL_BUNDLE_DIR if os.path.isdir(LOCAL_BUNDLE_DIR) else "C:/Users/Jer Khai/Downloads/sdoc-hackathon-bundle"
 
@@ -380,7 +380,7 @@ if app_mode == "📬 SDOC Hackathon Inbox (520 Emails)":
                 "Defects Detected": ", ".join(item.get("defect_fields", [])) if item.get("has_defect") else "None",
             })
 
-        st.dataframe(rows, use_container_width=True, height=440)
+        st.dataframe(rows, width="stretch", height=440)
         st.caption(f"Displaying {len(rows)} of 520 email records.")
 
     # --- TAB 2: LINEAR-STYLE SI vs DRAFT B/L REDLINES ---
@@ -530,17 +530,103 @@ if app_mode == "📬 SDOC Hackathon Inbox (520 Emails)":
                         st.warning("⚠️ **Forensic Analysis**: One or more of the 7 essential shipment fields contains a placeholder (`N/A`, `_______`, or `TBA`).")
 
                     st.divider()
-                    st.markdown("#### Rapid Auditor Actions")
+                    st.markdown("#### 🛠️ Human Auditor Actions & Durability")
+                    st.caption("Actions directly update and persist changes to `submission.json`.")
+
+                    # Visible Retry mechanism
+                    col_retry, col_space = st.columns([1, 2])
+                    with col_retry:
+                        if st.button("🔄 Retry Extraction & Vision", key=f"retry_{selected_hitl}"):
+                            with st.spinner(f"Retrying multi-format extraction and vision for {selected_hitl}…"):
+                                retry_extractor = FieldExtractor()
+                                retry_reconciler = DocumentReconciler()
+                                r_atts = [loader.load_attachment(p) for p in h_email.get("attachments", [])]
+                                r_si = next((a for a in r_atts if "SI" in a.filename or a.detected_doc_type == "SI"), r_atts[0] if r_atts else None)
+                                r_bl = next((a for a in r_atts if "BL" in a.filename or a.detected_doc_type == "BL"), r_atts[1] if len(r_atts) > 1 else None)
+                                r_si_fields = retry_extractor.extract(r_si) if r_si else None
+                                r_bl_fields = retry_extractor.extract(r_bl) if r_bl else None
+                                updated_entry = retry_reconciler.reconcile(
+                                    email_id=selected_hitl,
+                                    category="BL_COMPARISON",
+                                    si_att=r_si,
+                                    bl_att=r_bl,
+                                    si_fields=r_si_fields,
+                                    bl_fields=r_bl_fields
+                                )
+                                updated_entry["retry_performed"] = True
+                                updated_entry["retry_timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                                st.session_state.sdoc_submission[selected_hitl] = updated_entry
+                                update_submission_record(str(submission_file), selected_hitl, updated_entry)
+                                st.success(f"✅ Extraction & Vision retried for {selected_hitl}. Status: {updated_entry['status']}")
+                                st.rerun()
+
+                    # Manual Corrections Editor
+                    with st.expander("📝 Manual Field Override & Correction", expanded=False):
+                        st.caption("Apply manual overrides for disputed or unreadable fields:")
+                        c_override_1, c_override_2 = st.columns(2)
+                        with c_override_1:
+                            new_shipper = st.text_input("Corrected Shipper", value=h_entry.get("extracted_fields", {}).get("si", {}).get("shipper", "") or "", key=f"corr_shipper_{selected_hitl}")
+                            new_count = st.number_input("Corrected Container Count", value=int(h_entry.get("extracted_fields", {}).get("si", {}).get("container_count") or 1), min_value=1, step=1, key=f"corr_cnt_{selected_hitl}")
+                        with c_override_2:
+                            new_consignee = st.text_input("Corrected Consignee", value=h_entry.get("extracted_fields", {}).get("si", {}).get("consignee", "") or "", key=f"corr_cons_{selected_hitl}")
+                            new_weight = st.number_input("Corrected Gross Weight (KG)", value=float(h_entry.get("extracted_fields", {}).get("si", {}).get("gross_weight_kg") or 0.0), min_value=0.0, step=100.0, key=f"corr_wt_{selected_hitl}")
+                        
+                        reviewer_note = st.text_input("Auditor Review Notes", placeholder="e.g. Verified against original customs declaration", key=f"note_{selected_hitl}")
+                        if st.button("💾 Save Corrections to submission.json", key=f"save_corr_{selected_hitl}", type="primary"):
+                            corr_entry = dict(h_entry)
+                            corr_entry["status"] = "OK"
+                            corr_entry["has_defect"] = False
+                            corr_entry["defect_fields"] = []
+                            corr_entry["review_reason"] = None
+                            corr_entry["human_correction"] = {
+                                "shipper": new_shipper,
+                                "consignee": new_consignee,
+                                "container_count": new_count,
+                                "gross_weight_kg": new_weight,
+                                "notes": reviewer_note,
+                                "audited_by": "Human Auditor",
+                                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                            }
+                            st.session_state.sdoc_submission[selected_hitl] = corr_entry
+                            update_submission_record(str(submission_file), selected_hitl, corr_entry)
+                            st.success(f"✅ Corrections saved and persisted to {submission_file.name}!")
+                            st.rerun()
+
+                    st.markdown("#### Rapid Auditor Resolution")
                     a1, a2, a3 = st.columns(3)
                     with a1:
-                        if st.button("✅ Approve Human Override", key=f"ov_{selected_hitl}"):
-                            st.success(f"Case {selected_hitl} approved and cleared for processing.")
+                        if st.button("✅ Approve Human Override", key=f"ov_{selected_hitl}", type="primary"):
+                            approved_entry = dict(h_entry)
+                            approved_entry["status"] = "OK"
+                            approved_entry["review_reason"] = None
+                            approved_entry["has_defect"] = False
+                            approved_entry["defect_fields"] = []
+                            approved_entry["reviewed_by"] = "Human Auditor"
+                            approved_entry["audit_timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                            st.session_state.sdoc_submission[selected_hitl] = approved_entry
+                            update_submission_record(str(submission_file), selected_hitl, approved_entry)
+                            st.success(f"✅ Case {selected_hitl} approved, cleared, and persisted to {submission_file.name}!")
+                            st.rerun()
                     with a2:
                         if st.button("✉️ Request Forwarder Re-Upload", key=f"req_{selected_hitl}"):
-                            st.info(f"Correction request dispatched to {h_email.get('from')}.")
+                            req_entry = dict(h_entry)
+                            req_entry["review_reason"] = "reupload_requested"
+                            req_entry["reupload_recipient"] = h_email.get("from")
+                            req_entry["request_timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                            st.session_state.sdoc_submission[selected_hitl] = req_entry
+                            update_submission_record(str(submission_file), selected_hitl, req_entry)
+                            st.info(f"✉️ Re-upload request dispatched to {h_email.get('from')} and logged in submission.json.")
+                            st.rerun()
                     with a3:
                         if st.button("🚩 Escalate to Desk Lead", key=f"esc_{selected_hitl}"):
-                            st.warning(f"Case {selected_hitl} routed to Senior Trade Compliance Officer.")
+                            esc_entry = dict(h_entry)
+                            esc_entry["status"] = "NEEDS_REVIEW"
+                            esc_entry["review_reason"] = "escalated_to_lead"
+                            esc_entry["escalation_timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                            st.session_state.sdoc_submission[selected_hitl] = esc_entry
+                            update_submission_record(str(submission_file), selected_hitl, esc_entry)
+                            st.warning(f"🚩 Case {selected_hitl} routed to Senior Trade Compliance Officer and persisted.")
+                            st.rerun()
 
     # --- TAB 4: AUTONOMOUS DISPATCH & EDI ---
     with tab_dispatch:
@@ -562,7 +648,7 @@ if app_mode == "📬 SDOC Hackathon Inbox (520 Emails)":
                 "Status": "Queued for API Push"
             })
 
-        st.dataframe(dispatch_rows, use_container_width=True)
+        st.dataframe(dispatch_rows, width="stretch")
 
         if st.button("⚡ Simulate Instant API Push to Ocean Liners", type="primary"):
             pbar = st.progress(0, text="Pushing EDI amendments to carriers…")

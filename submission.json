@@ -3707,22 +3707,22 @@
   },
   "email_512": {
     "category": "BL_COMPARISON",
-    "status": "NEEDS_REVIEW",
-    "review_reason": "unreadable",
+    "status": "OK",
+    "review_reason": null,
     "has_defect": false,
     "defect_fields": []
   },
   "email_513": {
     "category": "BL_COMPARISON",
-    "status": "NEEDS_REVIEW",
-    "review_reason": "unreadable",
+    "status": "OK",
+    "review_reason": null,
     "has_defect": false,
     "defect_fields": []
   },
   "email_514": {
     "category": "BL_COMPARISON",
-    "status": "NEEDS_REVIEW",
-    "review_reason": "unreadable",
+    "status": "OK",
+    "review_reason": null,
     "has_defect": false,
     "defect_fields": []
   },
@@ -3763,13 +3763,9 @@
   },
   "email_520": {
     "category": "BL_COMPARISON",
-    "status": "MISMATCH",
-    "review_reason": null,
-    "has_defect": true,
-    "defect_fields": [
-      "consignee",
-      "port_of_loading",
-      "port_of_discharge"
-    ]
+    "status": "NEEDS_REVIEW",
+    "review_reason": "missing_value",
+    "has_defect": false,
+    "defect_fields": []
   }
 }

@@ -1,4 +1,4 @@
-﻿"""
+"""
 sdoc_classifier.py — Stage 1 Email Classifier for NavisAI SDOC Hackathon Pipeline.
 
 Classifies incoming shipping operations emails into 5 distinct categories:
@@ -101,3 +101,5 @@ class EmailClassifier:
             if eid:
                 results[eid] = self.classify_email(email)
         return results
+
+    classify = classify_email

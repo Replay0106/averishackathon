@@ -1,4 +1,4 @@
-﻿"""
+"""
 sdoc_reconciler.py — Stage 3 Semantic Normalizer & Deterministic 7-Field Reconciler for NavisAI SDOC Pipeline.
 
 Evaluates:
@@ -46,10 +46,10 @@ def normalize_entity(s: Optional[str]) -> str:
     if not s:
         return ""
     clean = normalize_text(s)
-    # Strip common legal suffixes
+    # Strip common legal suffixes (including period-separated variants like L.L.C., P.T.E. L.T.D.)
     legal_suffixes = [
-        r"\bSDN\s*BHD\b", r"\bBHD\b", r"\bPTE\s*LTD\b", r"\bLTD\b",
-        r"\bLIMITED\b", r"\bLLC\b", r"\bFZ\s*LLC\b", r"\bINC\b",
+        r"\bSDN\s*BHD\b", r"\bBHD\b", r"\bP\s*T\s*E\s*L\s*T\s*D\b", r"\bPTE\s*LTD\b", r"\bL\s*T\s*D\b", r"\bLTD\b",
+        r"\bLIMITED\b", r"\bL\s*L\s*C\b", r"\bLLC\b", r"\bFZ\s*L\s*L\s*C\b", r"\bFZ\s*LLC\b", r"\bINC\b",
         r"\bCO\s*LTD\b", r"\bCOMPANY\b", r"\bCORP\b", r"\bCORPORATION\b",
         r"\bGMBH\b", r"\bS\s*A\b", r"\bB\s*V\b", r"\bPVT\b"
     ]
@@ -90,14 +90,24 @@ def extract_city(port_str: str) -> str:
 class DocumentReconciler:
     def reconcile(
         self,
-        email_id: str,
-        category: str,
+        email_id: Any,
+        category: Any = "BL_COMPARISON",
         si_att: Optional[AttachmentData] = None,
         bl_att: Optional[AttachmentData] = None,
         si_fields: Optional[ExtractedDocFields] = None,
         bl_fields: Optional[ExtractedDocFields] = None,
     ) -> Dict[str, Any]:
         """Reconciles an email case and returns the submission entry."""
+        # Convenience: support reconcile(si_fields, bl_fields)
+        if isinstance(email_id, ExtractedDocFields):
+            si_fields = email_id
+            bl_fields = category if isinstance(category, ExtractedDocFields) else bl_fields
+            email_id = "reconcile_test"
+            category = "BL_COMPARISON"
+            if si_att is None and si_fields:
+                si_att = AttachmentData(path="", filename="si_doc", extension=".pdf", detected_doc_type=si_fields.doc_type)
+            if bl_att is None and bl_fields:
+                bl_att = AttachmentData(path="", filename="bl_doc", extension=".pdf", detected_doc_type=bl_fields.doc_type)
 
         # 1. Non-comparison categories
         if category != "BL_COMPARISON":
@@ -205,14 +215,16 @@ class DocumentReconciler:
         # (4) Port of Loading
         si_pol = normalize_port(si_fields.port_of_loading)
         bl_pol = normalize_port(bl_fields.port_of_loading)
-        if si_pol != bl_pol and extract_city(si_pol) != extract_city(bl_pol):
-            defect_fields.append("port_of_loading")
+        if si_pol != bl_pol and not (si_pol and bl_pol and (si_pol in bl_pol or bl_pol in si_pol)):
+            if extract_city(si_pol) != extract_city(bl_pol):
+                defect_fields.append("port_of_loading")
 
         # (5) Port of Discharge
         si_pod = normalize_port(si_fields.port_of_discharge)
         bl_pod = normalize_port(bl_fields.port_of_discharge)
-        if si_pod != bl_pod and extract_city(si_pod) != extract_city(bl_pod):
-            defect_fields.append("port_of_discharge")
+        if si_pod != bl_pod and not (si_pod and bl_pod and (si_pod in bl_pod or bl_pod in si_pod)):
+            if extract_city(si_pod) != extract_city(bl_pod):
+                defect_fields.append("port_of_discharge")
 
         # (6) Container Count
         if si_fields.container_count != bl_fields.container_count:
