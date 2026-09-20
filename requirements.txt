@@ -4,3 +4,5 @@ pypdf
 python-dotenv
 pydantic
 reportlab
+openpyxl
+python-docx
