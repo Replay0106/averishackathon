@@ -63,6 +63,7 @@ class ExtractedDocFields:
     has_missing_placeholder: bool = False
     missing_field_name: Optional[str] = None
     raw_text: str = ""
+    evidence_spans: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class FieldExtractor:
@@ -124,6 +125,28 @@ class FieldExtractor:
             return "N/A"
         return None
 
+    def _record_evidence(self, fields: ExtractedDocFields, field_name: str, val: Any, pattern: str, text: str):
+        lines = text.split("\n")
+        snippet = ""
+        line_no = 1
+        for idx, l in enumerate(lines):
+            if re.search(pattern, l, re.IGNORECASE):
+                snippet = l.strip()
+                line_no = idx + 1
+                break
+        if not snippet and val is not None and str(val) in text:
+            for idx, l in enumerate(lines):
+                if str(val) in l:
+                    snippet = l.strip()
+                    line_no = idx + 1
+                    break
+        fields.evidence_spans[field_name] = {
+            "value": val,
+            "snippet": snippet or f"Extracted from document header '{pattern}'",
+            "line_number": line_no,
+            "confidence": 0.98 if not fields.has_missing_placeholder else 0.40
+        }
+
     def _extract_via_text(self, att: AttachmentData) -> ExtractedDocFields:
         text = att.text
         doc_type = att.detected_doc_type
@@ -138,6 +161,7 @@ class FieldExtractor:
                 fields.missing_field_name = "shipper"
             else:
                 fields.shipper = val
+                self._record_evidence(fields, "shipper", val, r"Shipper|Exporter", text)
 
         # 2. Consignee
         raw_val = self._find_field(r"Consignee|To the Order of|CONSIGNEE", text)
@@ -148,6 +172,7 @@ class FieldExtractor:
                 fields.missing_field_name = "consignee"
             else:
                 fields.consignee = val
+                self._record_evidence(fields, "consignee", val, r"Consignee|To the Order of|CONSIGNEE", text)
 
         # 3. Notify Party
         raw_val = self._find_field(r"Notify\s*Party|Notify|NOTIFY", text)
@@ -158,6 +183,7 @@ class FieldExtractor:
                 fields.missing_field_name = "notify_party"
             else:
                 fields.notify_party = val
+                self._record_evidence(fields, "notify_party", val, r"Notify\s*Party|Notify|NOTIFY", text)
 
         # 4. Port of Loading (POL)
         raw_val = self._find_field(r"Port of Loading|Load Port|POL|Port of Load", text)
@@ -168,6 +194,7 @@ class FieldExtractor:
                 fields.missing_field_name = "port_of_loading"
             else:
                 fields.port_of_loading = val
+                self._record_evidence(fields, "port_of_loading", val, r"Port of Loading|Load Port|POL|Port of Load", text)
 
         # 5. Port of Discharge (POD)
         raw_val = self._find_field(r"Port of Discharge|Discharge Port|POD|Port of Disch", text)
@@ -178,6 +205,7 @@ class FieldExtractor:
                 fields.missing_field_name = "port_of_discharge"
             else:
                 fields.port_of_discharge = val
+                self._record_evidence(fields, "port_of_discharge", val, r"Port of Discharge|Discharge Port|POD|Port of Disch", text)
 
         # 6. Container Count
         raw_val = self._find_field(r"Total Containers|Container Count|No\.?\s*of Containers|Containers?|Packages?", text)
@@ -190,6 +218,7 @@ class FieldExtractor:
                 parsed_cnt = self._parse_container_count(raw_c)
                 if parsed_cnt is not None:
                     fields.container_count = parsed_cnt
+                    self._record_evidence(fields, "container_count", parsed_cnt, r"Containers?|Packages?", text)
                 else:
                     fields.has_missing_placeholder = True
                     fields.missing_field_name = "container_count"
@@ -205,6 +234,7 @@ class FieldExtractor:
                 parsed_wt = self._parse_weight(raw_w)
                 if parsed_wt is not None:
                     fields.gross_weight_kg = parsed_wt
+                    self._record_evidence(fields, "gross_weight_kg", parsed_wt, r"Gross Weight|Gross Wt|GROSS WT", text)
                 else:
                     fields.has_missing_placeholder = True
                     fields.missing_field_name = "gross_weight_kg"
