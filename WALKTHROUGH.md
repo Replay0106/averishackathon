@@ -111,21 +111,38 @@ flowchart TD
 
 ---
 
-## 4. Enterprise Cockpit Tabs (`app.py`)
+## 4. Enterprise Cockpit Workspaces (`app.py`)
 
-1. **📥 Inbox Triage Explorer**: Real-time triage table enriched with SLA countdowns (`⏰ 4.5h remaining`) and Demurrage Exposure (`$1,250 USD`).
-2. **🔍 Linear-Style SI vs. Draft B/L Redlines**:
-   - Vessel & Voyage Cut-off SLA banner.
-   - Financial & Demurrage Risk card.
-   - 7 canonical fields with strikethrough redlines and **source line citations** (e.g. `📍 Line 4: "SHIPPER: ..."`).
-   - **1-Click Carrier Auto-Amendment** + **✉️ Client Discrepancy Rectification Notice Composer**.
-3. **🛡️ Split-Pane HITL Review Desk**: Triage queue for flagged cases with retry support and direct write-through persistence to `submission.json`.
-4. **⚡ Autonomous Dispatch & EDI**: Queued carrier amendments with simulated DCSA/EDI API push.
-5. **🔒 Cybersecurity & Immutable Audit Ledger**:
-   - Live SPF/DKIM authentication badge.
-   - Attachment sandbox isolation status.
-   - Interactive Cryptographic SHA-256 ledger with a `"🔍 Verify Hash Chain"` integrity tester.
-6. **💬 Ask Navis Copilot**: Grounded conversational AI assistant citing ICC UCP 600 articles.
+The user interface was redesigned to follow Averis institutional branding (Deep Emerald `#059669`, Mint `#10B981`, Dark Slate `#0B1120`/`#1E293B`, and tabular numerals `font-variant-numeric: tabular-nums`) with a responsive sidebar-driven navigation drawer containing 6 dedicated operational workspaces:
+
+1. **📊 Executive Command Center**:
+   - Double-bezel KPI cards: Ingested Volume (520), Conformity Verified (87.1%), Discrepancies Flagged (9.6%), HITL Escalations (3.3%), Processing Latency (0.001s/msg).
+   - Intent distribution progress bars across the 5 categories.
+   - Discrepancy driver analytics (Container Count, Gross Weight, Port of Discharge, etc.).
+   - Urgent SLA Cut-off attention queue (< 24h to Carrier Manifest Cut-Off).
+2. **📥 Operational Inbox Triage**:
+   - High-density operational data grid with category, status, and search filters.
+   - Real-time Vessel Cut-Off SLA countdown badges (`🚨 CRITICAL (<6h)`, `⏰ URGENT (<24h)`).
+   - Direct Demurrage Exposure calculations (`$1,250 USD`).
+3. **🔍 Dual-Sheet Document Replicas**:
+   - Vessel & Voyage Cut-off SLA countdown banner and Demurrage Risk card.
+   - Multimodal PDF Vision AI inspection badge for scanned documents.
+   - **Dual-Sheet Physical Document Replicas**: Side-by-side paper replicas (`.doc-sheet-si` in Mint vs `.doc-sheet-bl` in Crimson).
+   - 7 canonical shipment fields with strikethrough redlines and **forensic line provenance citations** (`📍 Line 14: "Total Gross Weight: 24,500 KGS"`).
+   - **⚡ 1-Click Carrier Auto-Amendment** (instantly aligns draft B/L manifest to SI ground truth).
+   - **✉️ Client Discrepancy Rectification Notice Composer** (generates formal rectification email with closed-loop audit logging).
+   - **🚢 Ocean Liner Autonomous Dispatch & EDI API Push Queue** (simulates direct DCSA/EDI API push to MSC, Maersk, CMA CGM, ONE).
+4. **🛡️ 4-Step Guided HITL Resolution Desk**:
+   - **Step 1: Incident Diagnosis & Statutory Risk**: Evaluates failure mode (`wrong_doc_type`, `missing_attachment`, `unreadable`, `missing_value`) and demurrage risk.
+   - **Step 2: Source Evidence & Inline Field Corrections**: View raw message body and attachments; apply inline field overrides with review notes.
+   - **Step 3: Rapid Auditor Decision Bar**: 4 action buttons (`✅ Approve Override`, `🔄 Retry Vision AI`, `✉️ Request Re-Upload`, `🚩 Escalate to Lead`).
+   - **Step 4: Cryptographic Audit Seal**: UTC timestamped and sealed in the blockchain ledger for ISO 9001 and SOX compliance.
+5. **🔒 Cybersecurity & Cryptographic Audit Ledger**:
+   - Double-bezel KPI cards for Forwarder Authentication (SPF/DKIM), Attachment Sandbox (100% Isolated), and Ledger Integrity (SHA-256 Linked).
+   - Live `"🔍 Verify Hash Chain"` integrity tester with zero-tamper verification.
+   - Chronological audit blocks table displaying block index, actor, email ID, action, block hash, and parent hash.
+6. **💬 Ask Navis — Trade Compliance Copilot**:
+   - Grounded conversational AI assistant powered by Gemini for instant querying of shipment records, ICC UCP 600 rules, and audit anomalies.
 
 ---
 

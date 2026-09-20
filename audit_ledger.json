@@ -1,0 +1,12 @@
+[
+  {
+    "index": 0,
+    "timestamp": "2026-09-20T16:29:44.904553Z",
+    "actor": "GENESIS_SYSTEM",
+    "email_id": "SYS_000",
+    "action": "LEDGER_INITIALIZED",
+    "details": "NavisAI Immutable Compliance Ledger Initialized",
+    "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "block_hash": "901131d838b17aac0f7885b81e03cbdc9f5157a00343d30ab22083685ed1416a"
+  }
+]
