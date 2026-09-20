@@ -148,8 +148,8 @@ The batch processing pipeline was executed across the full 520-email benchmark d
   ```
 - **Execution Log Output**:
   ```text
-  Loading emails from: C:\Users\Jer Khai\Downloads\sdoc-hackathon-bundle\emails
-  Discovered 520 email directories.
+  Ingesting Bundle: sdoc-hackathon-bundle
+  Found 520 emails in inbox.
   Batch processing 520 emails...
   Processed 100/520 emails...
   Processed 200/520 emails...

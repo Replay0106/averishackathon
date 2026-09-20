@@ -9,7 +9,7 @@ Executes the end-to-end workflow:
   5. Optionally submits to self-evaluation server if running.
 
 Usage:
-  python sdoc_pipeline.py --bundle "C:/Users/Jer Khai/Downloads/sdoc-hackathon-bundle" --output "submission.json"
+  python sdoc_pipeline.py --bundle "sdoc-hackathon-bundle" --output "submission.json"
 """
 
 import argparse
@@ -176,7 +176,9 @@ def run_pipeline(bundle_dir: str, output_path: str = "submission.json", server_u
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NavisAI SDOC Pipeline Runner")
-    parser.add_argument("--bundle", default="C:/Users/Jer Khai/Downloads/sdoc-hackathon-bundle", help="Path to sdoc bundle")
+    local_bundle = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sdoc-hackathon-bundle")
+    default_bundle = local_bundle if os.path.isdir(local_bundle) else "C:/Users/Jer Khai/Downloads/sdoc-hackathon-bundle"
+    parser.add_argument("--bundle", default=default_bundle, help="Path to sdoc bundle")
     parser.add_argument("--output", default="submission.json", help="Path to output submission JSON")
     parser.add_argument("--server", default=None, help="Optional HTTP server URL for evaluation (e.g. http://localhost:8080)")
     args = parser.parse_args()

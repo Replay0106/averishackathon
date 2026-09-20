@@ -1,4 +1,4 @@
-﻿"""
+"""
 NavisAI | Autonomous Shipping Documentation & Trade Compliance Copilot
 Refined Enterprise Dual-Mode Platform (APEX Certified & Vercel Web Guidelines Compliant):
   - Adaptive Theme Toggle (🌙 Obsidian Command Deck vs ☀️ Institutional Clean Light)
@@ -41,7 +41,8 @@ load_dotenv()
 
 FAST_MODEL = "gemini-3.6-flash"
 REASONING_MODEL = "gemini-3.6-flash"
-BUNDLE_DEFAULT_DIR = "C:/Users/Jer Khai/Downloads/sdoc-hackathon-bundle"
+LOCAL_BUNDLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sdoc-hackathon-bundle")
+BUNDLE_DEFAULT_DIR = LOCAL_BUNDLE_DIR if os.path.isdir(LOCAL_BUNDLE_DIR) else "C:/Users/Jer Khai/Downloads/sdoc-hackathon-bundle"
 
 st.set_page_config(
     page_title="NavisAI | Autonomous Trade Copilot",
