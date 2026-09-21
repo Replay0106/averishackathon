@@ -923,10 +923,10 @@ if app_mode == "📬 SDOC Hackathon Inbox (520 Emails)":
                     <div style="background:var(--card-shell); border:1px solid var(--card-border); border-left:4px solid #8B5CF6; border-radius:8px; padding:10px 14px; margin-top:12px;">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <span style="font-size:0.72rem; font-weight:800; color:#8B5CF6; letter-spacing:0.05em;">STEP 4: CRYPTOGRAPHIC AUDIT SEAL & NON-REPUDIATION</span>
-                            <span class="status-pill" style="background:rgba(139,92,246,0.1); color:#8B5CF6; border:1px solid #8B5CF6;">ISO 9001 / SOX SEALED</span>
+                            <span class="status-pill" style="background:rgba(139,92,246,0.1); color:#8B5CF6; border:1px solid #8B5CF6;">HASH-CHAINED</span>
                         </div>
                         <div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">
-                            Every review decision is signed by the active auditor session, time-stamped in UTC, and permanently hashed into the SHA-256 tamper-evident blockchain ledger.
+                            Every review decision is recorded with the operator name entered in the UI (not an authenticated identity), time-stamped in UTC, and hashed into the SHA-256 tamper-evident ledger.
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -934,26 +934,26 @@ if app_mode == "📬 SDOC Hackathon Inbox (520 Emails)":
     # ----------------------------- SCREEN 5: CYBERSECURITY & AUDIT LEDGER -----------------------------
     elif nav_module == "🔒 Cybersecurity & Audit Ledger":
         st.subheader("Enterprise Zero-Trust Security & Cryptographic Audit Ledger")
-        st.caption("Cryptographic proof of non-repudiation, tamper-detection (ISO 9001 / SOX), and email spoofing defense.")
+        st.caption("Cryptographic proof of non-repudiation, tamper-detection and sender heuristics (not certified).")
 
         sec_col1, sec_col2, sec_col3 = st.columns(3)
         with sec_col1:
             st.markdown("""<div class="double-bezel"><div class="double-bezel-inner">
-                <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">FORWARDER AUTHENTICATION</div>
-                <div style="font-size:1.35rem; color:#10B981; font-weight:800;">🛡️ SPF/DKIM PASS</div>
-                <div style="font-size:0.75rem; color:var(--text-body);">Zero forwarder impersonation detected</div>
+                <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">SENDER HEURISTICS</div>
+                <div style="font-size:1.35rem; color:#10B981; font-weight:800;">🛡️ NO SENDER FLAGS</div>
+                <div style="font-size:0.75rem; color:var(--text-body);">Domain / display-name checks only</div>
             </div></div>""", unsafe_allow_html=True)
         with sec_col2:
             st.markdown("""<div class="double-bezel"><div class="double-bezel-inner">
                 <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">ATTACHMENT SANDBOX</div>
-                <div style="font-size:1.35rem; color:#10B981; font-weight:800;">🔒 100% ISOLATED</div>
-                <div style="font-size:0.75rem; color:var(--text-body);">0 malicious PDF scripts detected</div>
+                <div style="font-size:1.35rem; color:#10B981; font-weight:800;">🔒 PAYLOAD SCAN</div>
+                <div style="font-size:0.75rem; color:var(--text-body);">Token scan; not a sandbox</div>
             </div></div>""", unsafe_allow_html=True)
         with sec_col3:
             st.markdown("""<div class="double-bezel"><div class="double-bezel-inner">
                 <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">LEDGER INTEGRITY</div>
                 <div style="font-size:1.35rem; color:#0284C7; font-weight:800;">⛓️ SHA-256 LINKED</div>
-                <div style="font-size:0.75rem; color:var(--text-body);">Tamper-evident blockchain ledger</div>
+                <div style="font-size:0.75rem; color:var(--text-body);">Tamper-evident hash chain</div>
             </div></div>""", unsafe_allow_html=True)
 
         st.divider()

@@ -2,10 +2,10 @@
 NavisAI | Cybersecurity & Threat Mitigation Architecture (sdoc_security.py)
 --------------------------------------------------------------------------
 Provides enterprise zero-trust defense for operational shipping inboxes:
-1. Forwarder Email Authentication & Spoofing Defense (SPF / DKIM / DMARC)
+1. Sender heuristics (blocklisted domains, carrier display-name impersonation); SPF/DKIM/DMARC are NOT validated
 2. Malicious Attachment Sandbox Guard (PDF JavaScript / Launch / Macro scanning)
 3. Sensitive Commercial Data & PII Tokenization / Masking
-4. Tamper-Evident SHA-256 Cryptographic Audit Ledger
+4. Tamper-evident SHA-256 hash-chained audit ledger (local file, unsigned)
 """
 
 import re
@@ -29,7 +29,7 @@ class SecurityGuard:
         headers: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
-        Validates sender authenticity, detecting CEO fraud and forwarder domain spoofing.
+        Heuristic sender check: display-name impersonation and blocklisted domains. Does not read or validate SPF/DKIM/DMARC headers.
         """
         sender_clean = sender_email.strip().lower()
         domain = sender_clean.split("@")[-1] if "@" in sender_clean else ""
@@ -50,10 +50,8 @@ class SecurityGuard:
             is_spoofed = True
             reasons.append(f"Untrusted throwaway domain detected: '@{domain}'.")
             
-        auth_status = "REJECT" if is_spoofed else "PASS"
-        spf_result = "FAIL" if is_spoofed else "PASS"
-        dkim_result = "FAIL" if is_spoofed else "PASS"
-        dmarc_result = "REJECT" if is_spoofed else "PASS"
+        auth_status = "SUSPICIOUS" if is_spoofed else "NO_FLAGS"
+        spf_result = dkim_result = dmarc_result = "NOT_CHECKED"
         
         return {
             "auth_status": auth_status,
@@ -62,7 +60,8 @@ class SecurityGuard:
             "dmarc": dmarc_result,
             "is_suspicious": is_spoofed,
             "threat_reasons": reasons,
-            "security_badge": "🛡️ AUTHENTICATED" if not is_spoofed else "⚠️ SPOOFING DETECTED"
+            "method": "sender-heuristics",
+            "security_badge": "No sender flags" if not is_spoofed else "⚠️ Suspicious sender"
         }
 
     # 2. Malicious Attachment Sandbox Guard
@@ -119,7 +118,7 @@ class SecurityGuard:
 class TamperEvidentAuditLedger:
     """
     Cryptographic SHA-256 audit ledger ensuring immutable traceability
-    for all human approvals, escalations, and automated dispatches (ISO 9001 / SOX).
+    for human approvals, escalations and dispatches. Not certified against any standard.
     """
     def __init__(self, ledger_file: str = "audit_ledger.json"):
         self.ledger_file = ledger_file

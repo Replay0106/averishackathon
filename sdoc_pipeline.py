@@ -31,7 +31,7 @@ if sys.platform == "win32":
 from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
-from sdoc_reconciler import DocumentReconciler
+from sdoc_reconciler import DocumentReconciler, select_documents
 
 
 def run_pipeline(bundle_dir: str, output_path: str = "submission.json", server_url: str = None) -> Dict[str, Any]:
@@ -73,25 +73,7 @@ def run_pipeline(bundle_dir: str, output_path: str = "submission.json", server_u
 
         # BL_COMPARISON handling
         atts = email.get("attachments", [])
-        si_att, bl_att = None, None
-
-        for a in atts:
-            att_data = loader.load_attachment(a)
-            fn_upper = att_data.filename.upper()
-            if "_SI" in fn_upper or "SI_" in fn_upper or att_data.detected_doc_type == "SI":
-                if si_att is None:
-                    si_att = att_data
-            elif "_BL" in fn_upper or "BL_" in fn_upper or att_data.detected_doc_type in "BL":
-                if bl_att is None:
-                    bl_att = att_data
-
-        # If only 2 attachments but not separated by name, assign first as SI and second as BL
-        if len(atts) == 2 and (si_att is None or bl_att is None):
-            loaded = [loader.load_attachment(a) for a in atts]
-            si_cand = next((d for d in loaded if d.detected_doc_type == "SI"), loaded[0])
-            bl_cand = next((d for d in loaded if d.detected_doc_type == "BL"), loaded[1] if loaded[0] == si_cand else loaded[0])
-            si_att = si_att or si_cand
-            bl_att = bl_att or bl_cand
+        si_att, bl_att, ambiguous = select_documents([loader.load_attachment(a) for a in atts])
 
         si_fields = extractor.extract(si_att) if si_att else None
         bl_fields = extractor.extract(bl_att) if bl_att else None
@@ -104,6 +86,7 @@ def run_pipeline(bundle_dir: str, output_path: str = "submission.json", server_u
             si_fields=si_fields,
             bl_fields=bl_fields,
             draft_request=is_draft_request(email),
+            ambiguous_documents=ambiguous,
         )
 
         submission[eid] = entry

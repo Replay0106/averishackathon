@@ -64,15 +64,23 @@ class ExtractedDocFields:
     is_legible: bool = True
     has_missing_placeholder: bool = False
     missing_field_name: Optional[str] = None
+    has_conflicting_value: bool = False
+    conflicting_field_name: Optional[str] = None
     raw_text: str = ""
     evidence_spans: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class FieldExtractor:
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, cache_path: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        raw_key = api_key or os.environ.get("GEMINI_API_KEYS") or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+        # Support single key or comma-separated list of keys for multi-key quota pool
+        if raw_key:
+            self.api_keys = [k.strip() for k in raw_key.split(",") if k.strip()]
+        else:
+            self.api_keys = []
+        self.api_key = self.api_keys[0] if self.api_keys else None
         self.model = model or os.environ.get("GEMINI_MODEL") or "gemini-3.6-flash"
-        self._client = None
+        self._clients: Dict[str, Any] = {}
         default_cache = Path(__file__).resolve().parent / ".cache" / "vision_cache.json"
         self.cache_path = Path(cache_path) if cache_path else default_cache
 
@@ -116,11 +124,17 @@ class FieldExtractor:
             res.is_legible = False  # vision returned nothing usable: escalate, do not guess
         return res
 
+    def get_client(self, key: Optional[str] = None):
+        target_key = key or self.api_key
+        if not target_key or genai is None:
+            return None
+        if target_key not in self._clients:
+            self._clients[target_key] = genai.Client(api_key=target_key)
+        return self._clients[target_key]
+
     @property
     def client(self):
-        if self._client is None and genai is not None and self.api_key:
-            self._client = genai.Client(api_key=self.api_key)
-        return self._client
+        return self.get_client()
 
     def extract(self, att: AttachmentData, force_live: bool = False) -> ExtractedDocFields:
         """Extracts the 7 fields from an attachment, using text parsing or Gemini Vision."""
@@ -195,6 +209,31 @@ class FieldExtractor:
             "line_number": line_no,
             "confidence": 0.98 if not fields.has_missing_placeholder else 0.40
         }
+
+    # Labels are only trusted in their "Label: value" form, so table headings without a colon
+    # (e.g. a "CONTAINER NO." column) are not mistaken for a second statement of the field.
+    CONFLICT_PATTERNS = [
+        ("shipper", r"Shipper|Exporter"),
+        ("consignee", r"Consignee|To the Order of"),
+        ("notify_party", r"Notify\s*Party|Notify"),
+        ("port_of_loading", r"Port of Loading|Load Port|POL"),
+        ("port_of_discharge", r"Port of Discharge|Discharge Port|POD"),
+        ("container_count", r"Total Containers|Container Count|No\.?\s*of Containers"),
+        ("gross_weight_kg", r"(?:Total\s+)?Gross\s+(?:Weight|Wt)"),
+    ]
+
+    def _detect_conflicts(self, fields: ExtractedDocFields, text: str) -> None:
+        """Flags a document that states the same field twice with different values."""
+        for name, pattern in self.CONFLICT_PATTERNS:
+            seen = []
+            for m in re.finditer(r"(?:^|\n)[ \t]*(?:" + pattern + r")[^\r\n:]*:[ \t]*([^\r\n;]*)", text, re.IGNORECASE):
+                val = m.group(1).strip()
+                if val and not self._is_placeholder(val):
+                    seen.append(" ".join(val.upper().split()))
+            if len(set(seen)) > 1:
+                fields.has_conflicting_value = True
+                fields.conflicting_field_name = name
+                return
 
     def _extract_via_text(self, att: AttachmentData) -> ExtractedDocFields:
         text = att.text
@@ -288,9 +327,18 @@ class FieldExtractor:
                     fields.has_missing_placeholder = True
                     fields.missing_field_name = "gross_weight_kg"
 
+        self._detect_conflicts(fields, text)
         return fields
 
-    FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
+    FALLBACK_MODELS = [
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.7-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-2.5-flash-lite",
+    ]
 
     def _extract_via_vision(self, att: AttachmentData, force_live: bool = False) -> ExtractedDocFields:
         # 1. Reuse a previous live vision read of the identical file (content hash), never a hard-coded answer
@@ -342,34 +390,41 @@ Return ONLY a JSON object:
   "gross_weight_kg": 0.0
 }"""
 
-        # 2. Try live Gemini API with multi-model fallback and rate-limit retries
-        if self.client is not None and image_bytes:
+        # 3. Try live Gemini API across key pool and multi-model cascade with rate-limit retries
+        if image_bytes and self.api_keys and genai is not None:
             models_to_try = [self.model] + [m for m in self.FALLBACK_MODELS if m != self.model]
-            for model_name in models_to_try:
-                for retry in range(2):
-                    try:
-                        resp = self.client.models.generate_content(
-                            model=model_name,
-                            contents=[
-                                types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                                prompt
-                            ],
-                            config={"response_mime_type": "application/json"}
-                        )
-                        data = json.loads(resp.text)
-                        result = self._from_vision(data, att)
-                        if result.is_legible:
-                            self._cache_put(cache_key, data)
-                        return result
-                    except Exception as e:
-                        err_str = str(e)
-                        if "PerDay" in err_str:
-                            # per-model daily quota: retrying this model is pointless, try the next one
+            for key in self.api_keys:
+                client = self.get_client(key)
+                if not client:
+                    continue
+                for model_name in models_to_try:
+                    for retry in range(2):
+                        try:
+                            resp = client.models.generate_content(
+                                model=model_name,
+                                contents=[
+                                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                                    prompt
+                                ],
+                                config={"response_mime_type": "application/json"}
+                            )
+                            data = json.loads(resp.text)
+                            result = self._from_vision(data, att)
+                            if result.is_legible:
+                                self._cache_put(cache_key, data)
+                            return result
+                        except Exception as e:
+                            err_str = str(e)
+                            if "PerDay" in err_str or "DailyQuota" in err_str:
+                                # per-model daily quota on this key: try next model in cascade
+                                break
+                            if "ResourceExhausted" in err_str or "quota" in err_str.lower():
+                                # key-level quota exhausted: move to next key in pool
+                                break
+                            if "429" in err_str or "503" in err_str:
+                                time.sleep(1.5)
+                                continue
                             break
-                        if "429" in err_str or "503" in err_str:
-                            time.sleep(1.5)
-                            continue
-                        break
 
         # 3. Vision unavailable or failed: mark unreadable so the case goes to human review
         return ExtractedDocFields(

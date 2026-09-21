@@ -29,7 +29,7 @@ from api import importer
 from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
-from sdoc_reconciler import DocumentReconciler
+from sdoc_reconciler import DocumentReconciler, select_documents
 from sdoc_security import TamperEvidentAuditLedger
 
 BUNDLE = ROOT / "sdoc-hackathon-bundle"
@@ -108,18 +108,9 @@ def email_for_shipment(d: Dataset, sid: str) -> Optional[str]:
 
 
 def _pick_docs(d: Dataset, email: Dict[str, Any]):
-    si = bl = None
     loaded = [d.loader.load_attachment(a) for a in email.get("attachments", [])]
-    for att in loaded:
-        fn = att.filename.upper()
-        if "_SI" in fn or "SI_" in fn or att.detected_doc_type == "SI":
-            si = si or att
-        elif "_BL" in fn or "BL_" in fn or att.detected_doc_type == "BL":
-            bl = bl or att
-    if len(loaded) == 2 and (si is None or bl is None):
-        si = si or next((x for x in loaded if x.detected_doc_type == "SI"), loaded[0])
-        bl = bl or next((x for x in loaded if x.detected_doc_type == "BL"), loaded[1] if loaded[0] is si else loaded[0])
-    return si, bl, loaded
+    si, bl, ambiguous = select_documents(loaded)
+    return si, bl, ambiguous
 
 
 def _fields_dict(f) -> Optional[Dict[str, Any]]:
@@ -186,10 +177,11 @@ def run_email(d: Dataset, eid: str) -> Dict[str, Any]:
     result = _blank(d, eid, email, category)
     if category == "BL_COMPARISON":
         try:
-            si, bl, _ = _pick_docs(d, email)
+            si, bl, ambiguous = _pick_docs(d, email)
             si_f = extractor.extract(si) if si else None
             bl_f = extractor.extract(bl) if bl else None
-            entry = reconciler.reconcile(email_id=eid, category=category, si_att=si, bl_att=bl, si_fields=si_f, bl_fields=bl_f, draft_request=is_draft_request(email))
+            entry = reconciler.reconcile(email_id=eid, category=category, si_att=si, bl_att=bl, si_fields=si_f, bl_fields=bl_f,
+                                         draft_request=is_draft_request(email), ambiguous_documents=ambiguous)
             result.update(status=entry["status"], review_reason=entry["review_reason"], defect_fields=entry["defect_fields"])
             result["si"], result["bl"] = _fields_dict(si_f), _fields_dict(bl_f)
             result["confidence"] = _confidence(entry["status"], entry["review_reason"], si_f, bl_f)

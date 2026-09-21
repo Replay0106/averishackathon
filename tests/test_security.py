@@ -10,11 +10,12 @@ class TestSecurityArchitecture(unittest.TestCase):
     def test_spoofing_detection(self):
         res_legit = SecurityGuard.verify_email_authentication("ops@msc.com", "MSC Desk")
         self.assertFalse(res_legit["is_suspicious"])
-        self.assertEqual(res_legit["spf"], "PASS")
+        self.assertEqual(res_legit["auth_status"], "NO_FLAGS")
+        self.assertEqual(res_legit["spf"], "NOT_CHECKED")
 
         res_spoofed = SecurityGuard.verify_email_authentication("scam@malicious-domain.xyz", "MSC Customer Service")
         self.assertTrue(res_spoofed["is_suspicious"])
-        self.assertEqual(res_spoofed["dmarc"], "REJECT")
+        self.assertEqual(res_spoofed["auth_status"], "SUSPICIOUS")
 
     def test_pdf_payload_sandbox(self):
         safe_bytes = b"%PDF-1.4 ... valid stream content ..."

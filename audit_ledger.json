@@ -8,5 +8,34 @@
     "details": "NavisAI Immutable Compliance Ledger Initialized",
     "previous_hash": "0000000000000000000000000000000000000000000000000000000000000000",
     "block_hash": "901131d838b17aac0f7885b81e03cbdc9f5157a00343d30ab22083685ed1416a"
+  },
+  {
+    "index": 1,
+    "timestamp": "2026-09-21T08:55:52.303201Z",
+    "actor": "Operations Desk",
+    "email_id": "email_004",
+    "action": "CONFIRM_AI_RESULT",
+    "details": {
+      "status": "MISMATCH",
+      "confidence": 0.98
+    },
+    "previous_hash": "901131d838b17aac0f7885b81e03cbdc9f5157a00343d30ab22083685ed1416a",
+    "block_hash": "c6114673c8159d83b30beff4bf94067bbef613e9b869b2dd47e042c90f32f569"
+  },
+  {
+    "index": 2,
+    "timestamp": "2026-09-21T08:59:29.313086Z",
+    "actor": "Operations Desk",
+    "email_id": "email_004",
+    "action": "AMENDMENT_DISPATCHED",
+    "details": {
+      "fields": [
+        "consignee",
+        "notify_party"
+      ],
+      "to": "ONE"
+    },
+    "previous_hash": "c6114673c8159d83b30beff4bf94067bbef613e9b869b2dd47e042c90f32f569",
+    "block_hash": "6290d1deb6d0cb87d72ed9055b6c088936066fe0440bdaa9730cb2cae3fd3e5a"
   }
 ]

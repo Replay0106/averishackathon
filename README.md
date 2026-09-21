@@ -4,7 +4,7 @@
 [![Benchmark Parity](https://img.shields.io/badge/Benchmark%20Parity-100%25%20Exact%20Match-059669?style=for-the-badge)](file:///C:/Users/Jer%20Khai/Documents/Averis_Hackathon/NavisAI-copilot/submission.json)
 [![Processing Speed](https://img.shields.io/badge/Throughput-0.001s%20%2F%20msg-0284C7?style=for-the-badge)](file:///C:/Users/Jer%20Khai/Documents/Averis_Hackathon/NavisAI-copilot/sdoc_pipeline.py)
 [![AI Engine](https://img.shields.io/badge/Google%20Gemini-3.5%20%2F%203.7%20Flash-8B5CF6?style=for-the-badge&logo=google)](https://ai.google.dev/)
-[![Audit Ledger](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Blockchain%20Linked-0F172A?style=for-the-badge)](file:///C:/Users/Jer%20Khai/Documents/Averis_Hackathon/NavisAI-copilot/audit_ledger.json)
+[![Audit Ledger](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Hash%20Chained-0F172A?style=for-the-badge)](file:///C:/Users/Jer%20Khai/Documents/Averis_Hackathon/NavisAI-copilot/audit_ledger.json)
 
 > **Autonomous trade documentation compliance and discrepancy resolution copilot engineered for high-volume ocean freight operations and Global Business Services (GBS) teams (e.g. Averis GBS, managing global commodity exports like palm oil and pulp & paper).**
 
@@ -38,7 +38,7 @@ In international trade, high-volume shippers handle hundreds of operational emai
 | **Discrepancy Resolution** | 2–3 business days via manual email | **Instant 1-Click** EDI Push / Notice | **Real-time (<1 min)** |
 | **Scanned Document Handling** | Fails or requires manual re-keying | **Multimodal PDF Vision AI** (Gemini 3.5 Flash) | **Zero human re-keying** |
 | **Multi-Turn Revision Lineage** | Overwrites context; false flags | **Consensus Engine** (Zombie Suppression) | **Zero false alarms** |
-| **Audit Traceability** | Disconnected spreadsheets | **Cryptographic SHA-256 Blockchain Ledger** | **SOX / ISO 9001 sealed** |
+| **Audit Traceability** | Disconnected spreadsheets | **SHA-256 hash-chained audit log** | **Tamper-evident (not certified)** |
 
 ---
 
@@ -122,10 +122,10 @@ flowchart TD
 - Ranks triage queue by urgency: 🔴 **EMERGENCY (<6h)**, 🟠 **URGENT (<24h)**, 🟡 **STANDARD (<48h)**, 🟢 **ROUTINE (>48h)**.
 
 ### 3.7 Zero-Trust Cybersecurity & Audit Ledger (`sdoc_security.py`)
-- **Forwarder Spoofing Guard**: SPF/DKIM validation against impersonation.
+- **Sender heuristics**: Flags throwaway domains and carrier display-name impersonation. It does not validate SPF, DKIM or DMARC headers.
 - **Malicious Attachment Sandbox**: Scans PDF streams for `/JavaScript`, `/Launch`, `/EmbeddedFiles`.
 - **PII & Rate Masking**: Redacts IBANs, bank accounts, and confidential freight rates.
-- **SHA-256 Tamper-Evident Blockchain Ledger**: Cryptographically chains every extraction, human approval, and dispatch action (`audit_ledger.json`).
+- **SHA-256 Tamper-Evident Audit Ledger**: Hash-chains every extraction, human approval, and dispatch action (`audit_ledger.json`).
 
 ### 3.8 Continuous Inbox Watcher & Client Rectification (`sdoc_monitor.py`)
 - Monitors folder for incoming emails in real-time.
@@ -257,9 +257,9 @@ Access the web application at: **`http://localhost:5173`**
 
 ## 8. Cybersecurity & Compliance Standards
 
-- **Zero Data Retention (ZDR)**: Document payloads are processed in-memory. No proprietary shipping data is retained or used to train third-party foundation models.
-- **Cryptographic Audit Trail**: All actions (extraction, human corrections, carrier dispatches) are sealed in an immutable, SHA-256 chained ledger adhering to **ISO 9001 quality management** and **Sarbanes-Oxley (SOX) Section 404** compliance.
-- **Maritime Trade Standards**: Fully compliant with **ICC UCP 600** documentary credit rules, **IMO SOLAS Verified Gross Mass (VGM)** amendments, and **FIATA / DCSA electronic Bill of Lading (eBL)** standards.
+- **Data handling (current)**: Uploaded datasets and the audit ledger are stored as plain files on the server, and vision reads of scanned PDFs are cached in `.cache/`. Scanned pages are sent to the Google Gemini API; no data-processing agreement, residency decision or retention policy is in place yet. Not a zero-retention system.
+- **Cryptographic Audit Trail**: All actions (extraction, human corrections, carrier dispatches) are recorded in a SHA-256 hash-chained ledger. Edits to earlier entries are detectable; the ledger is a local file and is not signed, externally anchored or certified against any standard.
+- **Standards posture**: NavisAI is designed with reference to ISO/IEC 42001, ISO/IEC 27001, DCSA, the EU AI Act principles and SOC 2 criteria. It holds **no certification or attestation** against any of them and does not implement DCSA eBL. The risk engine references ICC UCP 600 and IMO SOLAS VGM as advisory context only. See `STANDARDS_ALIGNMENT.md` for the evidence-based assessment.
 
 ---
 

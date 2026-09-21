@@ -87,6 +87,63 @@ def extract_city(port_str: str) -> str:
     return re.sub(r"\([A-Z0-9]+\)", "", first).strip()
 
 
+PAREN_LOCODE = re.compile(r"\(\s*[A-Z0-9]{3,6}\s*\)", re.IGNORECASE)
+
+
+def port_parts(s: Optional[str]) -> Tuple[frozenset, frozenset]:
+    """Splits a port into (city tokens, all tokens), dropping any UN/LOCODE in brackets."""
+    if not s:
+        return frozenset(), frozenset()
+    stripped = PAREN_LOCODE.sub(" ", s)
+    if not stripped.strip():
+        stripped = s
+    full = frozenset(normalize_port(stripped).split())
+    city = frozenset(normalize_port(stripped.split(",")[0]).split())
+    return (city or full), full
+
+
+def ports_match(a: Optional[str], b: Optional[str]) -> bool:
+    """True when both entries name the same port.
+
+    Each side's city must be contained in the other's full name, so a document may add the
+    country or a UN/LOCODE ("JEBEL ALI" vs "JEBEL ALI, UAE") but not change the place itself
+    ("SINGAPORE" vs "SINGAPORE CHANGED").
+    """
+    city_a, full_a = port_parts(a)
+    city_b, full_b = port_parts(b)
+    if not full_a or not full_b:
+        return full_a == full_b
+    return city_a <= full_b and city_b <= full_a
+
+
+WEIGHT_TOLERANCE_KG = 0.5  # below 1 kg so a one-kilo difference is still reported
+
+
+def select_documents(attachments: List[AttachmentData]) -> Tuple[Optional[AttachmentData], Optional[AttachmentData], bool]:
+    """Picks the SI and the draft BL out of an email's attachments.
+
+    Returns (si, bl, ambiguous). `ambiguous` is True when two or more files claim the same
+    role, e.g. a second copy of the BL — the system cannot tell which one is authoritative.
+    """
+    si_candidates: List[AttachmentData] = []
+    bl_candidates: List[AttachmentData] = []
+    for att in attachments:
+        fn = att.filename.upper()
+        if "_SI" in fn or "SI_" in fn or att.detected_doc_type == "SI":
+            si_candidates.append(att)
+        elif "_BL" in fn or "BL_" in fn or att.detected_doc_type == "BL":
+            bl_candidates.append(att)
+
+    si = si_candidates[0] if si_candidates else None
+    bl = bl_candidates[0] if bl_candidates else None
+    if len(attachments) == 2 and (si is None or bl is None):
+        si = si or next((d for d in attachments if d.detected_doc_type == "SI"), attachments[0])
+        bl = bl or next((d for d in attachments if d.detected_doc_type == "BL"), attachments[1] if attachments[0] is si else attachments[0])
+
+    ambiguous = len(si_candidates) > 1 or len(bl_candidates) > 1
+    return si, bl, ambiguous
+
+
 class DocumentReconciler:
     def reconcile(
         self,
@@ -97,6 +154,7 @@ class DocumentReconciler:
         si_fields: Optional[ExtractedDocFields] = None,
         bl_fields: Optional[ExtractedDocFields] = None,
         draft_request: bool = False,
+        ambiguous_documents: bool = False,
     ) -> Dict[str, Any]:
         """Reconciles an email case and returns the submission entry."""
         # Convenience: support reconcile(si_fields, bl_fields)
@@ -155,6 +213,16 @@ class DocumentReconciler:
                 "defect_fields": []
             }
 
+        # 3b. Two files claim the same role (e.g. a second copy of the BL): a human must say which one counts
+        if ambiguous_documents:
+            return {
+                "category": "BL_COMPARISON",
+                "status": "NEEDS_REVIEW",
+                "review_reason": "wrong_doc_type",
+                "has_defect": False,
+                "defect_fields": []
+            }
+
         # 4. Check wrong document type (disguised invoice, packing list, COO)
         wrong_types = ("INVOICE", "PACKING_LIST", "COO")
         if si_att.detected_doc_type in wrong_types or bl_att.detected_doc_type in wrong_types:
@@ -168,6 +236,16 @@ class DocumentReconciler:
 
         # 5. Check missing values or placeholders
         if si_fields is None or bl_fields is None:
+            return {
+                "category": "BL_COMPARISON",
+                "status": "NEEDS_REVIEW",
+                "review_reason": "missing_value",
+                "has_defect": False,
+                "defect_fields": []
+            }
+
+        # A document that states the same field twice with different values cannot be read dependably
+        if getattr(si_fields, "has_conflicting_value", False) or getattr(bl_fields, "has_conflicting_value", False):
             return {
                 "category": "BL_COMPARISON",
                 "status": "NEEDS_REVIEW",
@@ -224,25 +302,19 @@ class DocumentReconciler:
             defect_fields.append("notify_party")
 
         # (4) Port of Loading
-        si_pol = normalize_port(si_fields.port_of_loading)
-        bl_pol = normalize_port(bl_fields.port_of_loading)
-        if si_pol != bl_pol and not (si_pol and bl_pol and (si_pol in bl_pol or bl_pol in si_pol)):
-            if extract_city(si_pol) != extract_city(bl_pol):
-                defect_fields.append("port_of_loading")
+        if not ports_match(si_fields.port_of_loading, bl_fields.port_of_loading):
+            defect_fields.append("port_of_loading")
 
         # (5) Port of Discharge
-        si_pod = normalize_port(si_fields.port_of_discharge)
-        bl_pod = normalize_port(bl_fields.port_of_discharge)
-        if si_pod != bl_pod and not (si_pod and bl_pod and (si_pod in bl_pod or bl_pod in si_pod)):
-            if extract_city(si_pod) != extract_city(bl_pod):
-                defect_fields.append("port_of_discharge")
+        if not ports_match(si_fields.port_of_discharge, bl_fields.port_of_discharge):
+            defect_fields.append("port_of_discharge")
 
         # (6) Container Count
         if si_fields.container_count != bl_fields.container_count:
             defect_fields.append("container_count")
 
         # (7) Gross Weight (KG)
-        if abs(si_fields.gross_weight_kg - bl_fields.gross_weight_kg) > 1.0:
+        if abs(si_fields.gross_weight_kg - bl_fields.gross_weight_kg) > WEIGHT_TOLERANCE_KG:
             defect_fields.append("gross_weight_kg")
 
         if defect_fields:

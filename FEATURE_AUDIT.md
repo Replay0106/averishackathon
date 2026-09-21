@@ -43,6 +43,41 @@ Reading: comparison and escalation are strong, and classification is the weak li
 - **Tables:** `Consignee (Non-Negotiable)` no longer splits at the hyphen, and the `TOTAL Gross Wt` line is now read before the table header, so container numbers are no longer parsed as weights. The 6 suspect emails resolve correctly (email_351 stays a genuine 15 vs 16 container defect).
 - **Scans:** the hard-coded `OFFLINE_SCANNED_CACHE` is removed. Scanned PDFs are read by Gemini vision, and if vision fails or returns nothing they are marked unreadable and go to human review. Successful live reads are cached by file hash in `.cache/vision_cache.json`. Re-measured with live vision (default model `gemini-3.6-flash`, override with `GEMINI_MODEL`; falls through to `gemini-3.5-flash-lite` when a model's free-tier daily quota of 20 is used up): the final score is still **0.9946**, but the 3 scans are now read successfully (SI = BL), so they report OK and the diagnostic escalation recall is 0.85 (unreadable 2 of 5). The reference treats those scans as unreadable; that axis is not part of the final score.
 
+## 1b. Second benchmark — DOCSTRESS (1,299 emails, supplied answer key)
+
+A separate stress folder with a per-email key (`condition`, `expected_local_status`, `expected_gemini_status`, `defect_fields`). Four comparison rules were tightened after the first run; the hackathon score above is unchanged (`submission.json` is byte-identical), and 49/49 tests pass.
+
+| Stage 3 (260 document checks) | Before | After |
+|---|---|---|
+| Classification accuracy / macro-F1 (all 1,299) | 0.467 / 0.385 | **1.000 / 1.000** |
+| Status match vs the Gemini column | 208/260 (0.800) | **260/260 (1.000)** |
+| Status match vs the local-only column | 187/260 (0.719) | 235/260 (0.904) |
+| Mismatch precision / recall | 1.000 / 0.464 | **1.000 / 1.000** |
+| Field-level precision / recall | 1.000 / 1.000 | 1.000 / 1.000 |
+| Escalation precision / recall | 1.000 / 0.800 | **1.000 / 1.000** |
+
+Every condition now matches the Gemini column in full: clean, field_mismatch, conflicting_field, duplicate_pair, missing_field, wrong_doc_type, corrupted, encrypted, rotated, noisy, blurred, low_resolution. The four fixes:
+1. **Ports** — a name was accepted when one contained the other, so "Singapore" matched "Singapore Changed". Each side's city must now appear in the other's full name, which still allows an added country or bracketed UN/LOCODE ("JEBEL ALI" vs "JEBEL ALI, UAE"). Caught 10 missed mismatches.
+2. **Gross weight** — the 1 kg tolerance hid a genuine 12,143 vs 12,144 kg difference; tolerance is now 0.5 kg, which still absorbs rounding. Caught 3 more.
+3. **Conflicting values** — a document stating the same field twice with different values is escalated (`missing_value`). Only the `Label: value` form counts, so a repeated table heading such as "CONTAINER NO." is not mistaken for a second value. 24 emails.
+4. **Duplicate documents** — an extra `BL_copy` attachment makes the authoritative draft ambiguous, so it is escalated rather than silently resolved. 13 emails.
+
+Judgment calls: duplicates are reported as `wrong_doc_type` and conflicting values as `missing_value`, because the submission schema allows only four review reasons and neither case has an exact one. The key checks status, not reason. The key's `semantic_status` column expects values to be read out of image-only and encrypted files, which no local reader can do; it is a ceiling, not a target.
+
+### Classification, second pass
+
+Classification started at accuracy 0.467 / macro-F1 0.385 on this benchmark: all 260 SI requests, all 260 invoice queries and 173 of 259 spam emails fell into GENERAL, because the rules only knew the hackathon's wording.
+
+| Stage 1 | Before | After |
+|---|---|---|
+| DOCSTRESS accuracy | 0.467 | **1.000** |
+| DOCSTRESS macro-F1 | 0.385 | **1.000** |
+| Hackathon accuracy / macro-F1 | 0.987 / 0.982 | 0.987 / 0.982 (unchanged) |
+
+The keyword lists are kept as they are and a layer of *intent* patterns added on top (`SPAM_INTENT`, `INVOICE_INTENT`, `SI_INTENT` in `sdoc_classifier.py`), which describe what a message asks for rather than the exact phrases one dataset happens to use — credential harvesting and account threats, a billing document named alongside a dispute, a request for the SI to be supplied. All five categories now score F1 1.00 on DOCSTRESS with zero errors, and not one hackathon email changed category.
+
+**Misleading subjects.** Matching SI intent on subject + body pulled nine hackathon emails into SI_REQUEST whose subject reads "_Reminder_Paper - Submit SI & AED" over an unrelated body (a berthing report, a New Year greeting). The scorer confirmed those belong in GENERAL — the hackathon score fell to 0.9872 — so SI intent is matched against the **body** only: a recurring subject line is not itself a request. Spam and invoice intent still read subject and body, which both datasets score 1.00 on. This is the "misleading email subjects" case the use-case brief calls out, and it is covered by a regression test.
+
 ## 2. Advanced stage
 
 | Challenge | Status | Evidence / gap |

@@ -98,10 +98,10 @@ flowchart TD
 ### 2.4 Stage 4: Zero-Trust Security, Audit Ledger & Closed-Loop Dispatch
 - **Core Files**: [`sdoc_security.py`](file:///C:/Users/Jer%20Khai/Documents/Averis_Hackathon/NavisAI-copilot/sdoc_security.py), [`sdoc_monitor.py`](file:///C:/Users/Jer%20Khai/Documents/Averis_Hackathon/NavisAI-copilot/sdoc_monitor.py)
 - **Enterprise Security Guardrails**:
-  - **Forwarder Spoofing Guard**: Validates SPF/DKIM/DMARC headers to prevent forwarder impersonation and fraudulent diversion of cargo titles.
+  - **Forwarder Spoofing Guard**: Heuristic sender check (throwaway domains, carrier display-name impersonation). It does not validate SPF/DKIM/DMARC headers.
   - **Malicious Attachment Sandbox**: Scans PDF byte streams for `/JavaScript`, `/Launch`, `/EmbeddedFiles`, and executable polyglots before processing.
   - **PII & Rate Masking**: Redacts sensitive bank accounts, IBANs, and confidential freight rates.
-  - **Cryptographic SHA-256 Tamper-Evident Ledger**: Append-only blockchain-style ledger (`audit_ledger.json`) linking every automated extraction, human override, and carrier dispatch with SHA-256 block hashes.
+  - **Cryptographic SHA-256 Tamper-Evident Ledger**: Append-only hash-chained ledger (`audit_ledger.json`) linking every automated extraction, human override, and carrier dispatch with SHA-256 block hashes.
 - **Closed-Loop Rectification Dispatch**:
   - Automatically drafts a formal client discrepancy notice detailing Booking Reference, Vessel/Voyage, SI Cut-off countdown, and a side-by-side mismatch comparison table.
   - Supports 1-click dispatch, persisting the resolution to `submission.json` and generating an immutable audit ledger block.
@@ -147,9 +147,9 @@ The user interface was built to adhere to **Averis corporate institutional brand
    - **Step 1: Incident Diagnosis & Statutory Risk**: Evaluates failure mode (`wrong_doc_type`, `missing_attachment`, `unreadable`, `missing_value`) and demurrage risk.
    - **Step 2: Source Evidence & Inline Field Corrections**: View raw message body and attachments; apply inline field overrides with review notes.
    - **Step 3: Rapid Auditor Decision Bar**: 4 action buttons (`✅ Approve Override`, `🔄 Retry Vision AI`, `✉️ Request Re-Upload`, `🚩 Escalate to Lead`).
-   - **Step 4: Cryptographic Audit Seal**: UTC timestamped and sealed in the blockchain ledger for ISO 9001 and SOX compliance.
+   - **Step 4: Cryptographic Audit Seal**: UTC timestamped and recorded in the SHA-256 hash-chained ledger (tamper-evident, not certified).
 5. **🔒 Cybersecurity & Cryptographic Audit Ledger**:
-   - Double-bezel KPI cards for Forwarder Authentication (SPF/DKIM), Attachment Sandbox (100% Isolated), and Ledger Integrity (SHA-256 Linked).
+   - Double-bezel KPI cards for Sender Heuristics, Attachment Sandbox (100% Isolated), and Ledger Integrity (SHA-256 Linked).
    - Live `"🔍 Verify Hash Chain"` integrity tester with zero-tamper verification.
    - Chronological audit blocks table displaying block index, actor, email ID, action, block hash, and parent hash.
 6. **💬 Ask Navis — Trade Compliance Copilot**:
