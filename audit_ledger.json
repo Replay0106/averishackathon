@@ -145,5 +145,34 @@
     },
     "previous_hash": "51c7c2e0ef624f83b894c3b97fbd3ed84fc8782d084a73aff97e05503ad5ff53",
     "block_hash": "e331228860866020d7a4cee1fa329a5734d1d3aff815b7c2f080896d5c132f72"
+  },
+  {
+    "index": 11,
+    "timestamp": "2026-09-21T14:42:10.548717Z",
+    "actor": "Operations Desk",
+    "email_id": "imp_f61b7917:email_000005",
+    "action": "CONFIRM_AI_RESULT",
+    "details": {
+      "status": "MISMATCH",
+      "confidence": 0.98
+    },
+    "previous_hash": "e331228860866020d7a4cee1fa329a5734d1d3aff815b7c2f080896d5c132f72",
+    "block_hash": "83b3b5fde47ad64750a2ffda630afde317339e0569cbaee933b0b28459dcaed9"
+  },
+  {
+    "index": 12,
+    "timestamp": "2026-09-21T14:42:25.940260Z",
+    "actor": "Operations Desk",
+    "email_id": "imp_f61b7917:email_000005",
+    "action": "AMENDMENT_DISPATCHED",
+    "details": {
+      "fields": [
+        "notify_party",
+        "gross_weight_kg"
+      ],
+      "to": "Other / NVOCC"
+    },
+    "previous_hash": "83b3b5fde47ad64750a2ffda630afde317339e0569cbaee933b0b28459dcaed9",
+    "block_hash": "af24cf851f72ee2abafb213a152b0872ef1abaa47200984cf00b8915b35b7198"
   }
 ]
