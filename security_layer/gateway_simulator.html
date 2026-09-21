@@ -1,0 +1,710 @@
+<title>Trust Gateway Simulator</title>
+<style>
+  :root {
+    --bg: #eef1f4;
+    --surface: #ffffff;
+    --surface-2: #e2e7ec;
+    --ink: #131a22;
+    --ink-dim: #57626d;
+    --line: #c7ced5;
+    --accent: #0d7d7a;
+    --accent-soft: #e3f3f1;
+    --risk: #c2410c;
+    --risk-soft: #fbe9dd;
+    --new: #6d4de0;
+    --new-soft: #ece8fb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1318; --surface: #141c23; --surface-2: #1c2730;
+      --ink: #e7edf1; --ink-dim: #8fa0ac; --line: #2b3944;
+      --accent: #2dd4c4; --accent-soft: #12302d;
+      --risk: #f2994a; --risk-soft: #3a2416;
+      --new: #b3a1f7; --new-soft: #241c3d;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1318; --surface: #141c23; --surface-2: #1c2730;
+    --ink: #e7edf1; --ink-dim: #8fa0ac; --line: #2b3944;
+    --accent: #2dd4c4; --accent-soft: #12302d;
+    --risk: #f2994a; --risk-soft: #3a2416;
+    --new: #b3a1f7; --new-soft: #241c3d;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    padding-inline: 16px; padding-block: 28px 60px;
+  }
+  main { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
+
+  h1 {
+    font-family: "IBM Plex Mono", ui-monospace, "Courier New", monospace;
+    font-size: clamp(1.4rem, 1.05rem + 1.3vw, 1.9rem);
+    letter-spacing: -0.01em; margin: 0 0 6px; text-wrap: balance;
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 8px;
+  }
+  .lede { font-size: 15px; line-height: 1.6; color: var(--ink-dim); max-width: 68ch; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  h2 {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-dim);
+    margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  section {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 18px 18px 20px; min-width: 0;
+  }
+
+  button {
+    font-family: "IBM Plex Sans", sans-serif; font-size: 12.5px; font-weight: 500;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+    border-radius: 4px; padding: 6px 10px; cursor: pointer; transition: border-color .15s;
+  }
+  button:hover { border-color: var(--ink-dim); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button.primary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  button.reset { background: var(--surface); }
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--ink-dim); }
+  td.mono, th.mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .trust-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px; font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+    background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent);
+  }
+  .trust-pill.low { background: var(--risk-soft); color: var(--risk); border-color: var(--risk); }
+
+  .session-tag { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-dim); }
+  .session-tag.pending { color: var(--new); }
+
+  #currentMessage {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-dim);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px;
+    padding: 8px 10px; margin-bottom: 14px; overflow-x: auto; white-space: pre; min-height: 1.6em;
+  }
+
+  ol.gates { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .gate {
+    display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 10px;
+    border: 1.5px solid var(--line); border-radius: 4px; padding: 7px 10px;
+    background: var(--surface); transition: background .2s, border-color .2s, opacity .2s;
+  }
+  .gate[data-status="idle"] { opacity: .5; }
+  .gate[data-status="active"] { border-color: var(--ink-dim); background: var(--surface-2); }
+  .gate[data-status="pass"] { border-color: var(--accent); background: var(--accent-soft); }
+  .gate[data-status="fail"] { border-color: var(--risk); background: var(--risk-soft); }
+  .gate[data-status="hold"] { border-color: var(--new); background: var(--new-soft); }
+  .gate[data-status="skip"] { opacity: .3; }
+  .gate-chip {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 700;
+    text-align: center; border-radius: 3px; padding: 3px 0; background: var(--surface-2); color: var(--ink-dim);
+  }
+  .gate[data-status="pass"] .gate-chip { background: var(--accent); color: var(--surface); }
+  .gate[data-status="fail"] .gate-chip { background: var(--risk); color: var(--surface); }
+  .gate[data-status="hold"] .gate-chip { background: var(--new); color: var(--surface); }
+  .gate-name { font-size: 13px; font-weight: 600; }
+  .gate-reason { font-size: 11.5px; color: var(--ink-dim); grid-column: 2 / 3; margin-top: -2px; }
+  .gate-status-word {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--ink-dim); white-space: nowrap;
+  }
+
+  #outcomeBanner {
+    font-family: "IBM Plex Mono", monospace; font-size: 13px; font-weight: 700;
+    border-radius: 4px; padding: 9px 12px; text-align: center; border: 1.5px solid var(--line);
+    color: var(--ink-dim); background: var(--surface-2);
+  }
+  #outcomeBanner[data-outcome="accepted"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  #outcomeBanner[data-outcome="rejected"] { border-color: var(--risk); background: var(--risk-soft); color: var(--risk); }
+  #outcomeBanner[data-outcome="held"] { border-color: var(--new); background: var(--new-soft); color: var(--new); }
+
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+
+  #eventLog { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow-y: auto; display: flex; flex-direction: column-reverse; gap: 5px; }
+  #eventLog li {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; line-height: 1.5;
+    padding: 6px 8px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 0 3px 3px 0;
+  }
+  #eventLog li[data-kind="pass"] { border-left-color: var(--accent); }
+  #eventLog li[data-kind="fail"] { border-left-color: var(--risk); }
+  #eventLog li[data-kind="hold"] { border-left-color: var(--new); }
+  .log-empty { color: var(--ink-dim); font-style: italic; }
+
+  #ledgerInfo { font-size: 12.5px; color: var(--ink-dim); line-height: 1.6; margin: 10px 0 12px; font-family: "IBM Plex Mono", monospace; }
+  #ledgerInfo b { color: var(--ink); }
+  .verify-ok { color: var(--accent); font-weight: 700; }
+  .verify-bad { color: var(--risk); font-weight: 700; }
+  .muted { color: var(--ink-dim); }
+</style>
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<main>
+  <div>
+    <p class="eyebrow">Verifiable Trust Gateway — live</p>
+    <h1>Trust Gateway Simulator</h1>
+    <p class="lede">
+      This runs the real gate logic in your browser — HMAC-SHA256 and the Merkle proofs are
+      computed for real via the Web Crypto API, not faked. Pick a device, send it traffic, and
+      watch each message clear (or get stopped by) all ten gates in order.
+    </p>
+  </div>
+
+  <section id="devicesSection">
+    <h2>Devices <button class="reset" id="resetBtn" type="button">Reset simulation</button></h2>
+    <div class="table-wrap">
+      <table id="deviceTable">
+        <thead>
+          <tr><th>Device</th><th>Trust</th><th>Session</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="deviceTableBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="split">
+    <section id="pipelineSection">
+      <h2>Gate-by-gate result</h2>
+      <div id="currentMessage">— send a message to see it here —</div>
+      <ol class="gates" id="gateList"></ol>
+      <div id="outcomeBanner">Waiting for a message.</div>
+    </section>
+
+    <section id="logSection">
+      <h2>Event log</h2>
+      <ul id="eventLog"><li class="log-empty">Nothing sent yet.</li></ul>
+    </section>
+  </div>
+
+  <section id="ledgerSection">
+    <h2>Audit ledger <button class="primary" id="flushBtn" type="button">Flush batch</button></h2>
+    <div id="ledgerInfo">No batch flushed yet — committed records are pending.</div>
+    <div class="table-wrap">
+      <table id="recordsTable">
+        <thead>
+          <tr><th>Record</th><th>Device</th><th>Seq</th><th>Value</th><th>Batch</th><th>Proof</th></tr>
+        </thead>
+        <tbody id="recordsTableBody"><tr><td colspan="6" class="muted">No committed records yet.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const GATE_DEFS = [
+    ["Rate limit (IP)", "source-address flood control"],
+    ["Canonical parser", "rejects malformed, before crypto"],
+    ["Trust ledger check", "score floor, not a binary flag"],
+    ["Session check", "re-challenge, no device penalty"],
+    ["HMAC verify", "header + payload integrity"],
+    ["Adaptive rate limit", "budget scales with trust score"],
+    ["Replay window", "64-bit sliding, drops duplicates"],
+    ["Freshness check", "flags held-back messages"],
+    ["Plausibility + hold", "borderline → corroboration buffer"],
+    ["Commit + Merkle proof", "provable against a published root"],
+  ];
+  const TRUST_FLOOR = 20, TRUST_MAX = 100, TRUST_PENALTY = 8, TRUST_SOFT_PENALTY = 4, TRUST_REWARD = 1;
+  const PLAUSIBLE_RANGE = [-400, 1250], MAX_SLEW = 80, HOLD_BAND = 60, CORROB_TOLERANCE = 25;
+  const STEP_MS = 200;
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ---------- crypto helpers (real Web Crypto, not simulated) ----------
+  async function hmacHex(secretStr, message) {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey("raw", enc.encode(secretStr), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const sig = await crypto.subtle.sign("HMAC", key, enc.encode(message));
+    return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  async function sha256Hex(str) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  async function leafHash(payload) {
+    return sha256Hex("leaf:" + JSON.stringify(payload, Object.keys(payload).sort()));
+  }
+  async function nodeHash(l, r) { return sha256Hex("node:" + l + r); }
+  async function buildTree(leaves) {
+    const levels = [leaves]; let cur = leaves;
+    while (cur.length > 1) {
+      const next = [];
+      for (let i = 0; i < cur.length; i += 2) {
+        next.push(await nodeHash(cur[i], i + 1 < cur.length ? cur[i + 1] : cur[i]));
+      }
+      levels.push(next); cur = next;
+    }
+    return levels;
+  }
+  function proofForIndex(levels, index) {
+    const proof = []; let idx = index;
+    for (let li = 0; li < levels.length - 1; li++) {
+      const level = levels[li], sib = idx ^ 1;
+      if (sib < level.length) proof.push([sib > idx ? "R" : "L", level[sib]]);
+      else proof.push(["R", level[idx]]);
+      idx = Math.floor(idx / 2);
+    }
+    return proof;
+  }
+  async function verifyProofChain(leaf, proof, root) {
+    let cur = leaf;
+    for (const [side, sib] of proof) cur = side === "R" ? await nodeHash(cur, sib) : await nodeHash(sib, cur);
+    return cur === root;
+  }
+
+  // ---------- wire format ----------
+  const HEADER_RE = /^T (?<device_id>[A-Za-z0-9_-]{1,32}) (?<session_id>[A-Za-z0-9_-]{1,32}) (?<seq>\d{1,20}) (?<metric>[A-Z_]{1,16}) (?<scaled_value>-?\d{1,12}) (?<uptime_ms>\d{1,20})$/;
+  const MAC_RE = /^[0-9a-f]{64}$/;
+  function parseWire(raw) {
+    const parts = raw.trim().split(" ");
+    if (parts.length !== 8) throw new Error(`expected 8 space-separated fields, got ${parts.length}`);
+    const header = parts.slice(0, 7).join(" "), mac = parts[7];
+    const m = HEADER_RE.exec(header);
+    if (!m) throw new Error("header does not match canonical grammar");
+    if (!MAC_RE.test(mac)) throw new Error("mac is not a 64-char hex digest");
+    const g = m.groups;
+    return { device_id: g.device_id, session_id: g.session_id, seq: parseInt(g.seq, 10), metric: g.metric,
+             scaled_value: parseInt(g.scaled_value, 10), uptime_ms: parseInt(g.uptime_ms, 10), header, mac, raw };
+  }
+  function encodeHeader(dev, sess, seq, metric, val, uptime) { return `T ${dev} ${sess} ${seq} ${metric} ${val} ${uptime}`; }
+  async function buildMessage(dev, value) {
+    const v = value ?? (dev.base + Math.floor(Math.random() * (2 * dev.noise + 1)) - dev.noise);
+    dev.seq += 1;
+    // Real elapsed wall-clock time, not a fixed step — so the freshness gate (which
+    // compares uptime elapsed to wall-clock elapsed) only trips on an actual delay,
+    // not on however long a person takes between clicks.
+    if (dev.startTime == null) dev.startTime = Date.now();
+    const uptime = Date.now() - dev.startTime;
+    const header = encodeHeader(dev.id, dev.sessionId, dev.seq, dev.metric, v, uptime);
+    const mac = await hmacHex(dev.secret, header);
+    const raw = `${header} ${mac}`;
+    dev.lastRaw = raw; dev.lastSeq = dev.seq;
+    return raw;
+  }
+
+  // ---------- gateway state ----------
+  let devices, gatewaySessions, replayState, freshnessBaseline, corroboration, ipLimiter, deviceLimiter, ledger, quarantineCount, acceptedCount;
+
+  function freshState() {
+    devices = [
+      mkDevice("dev-good", "secret-good", "TEMP", 220, 3, 70),
+      mkDevice("dev-replay", "secret-replay", "TEMP", 200, 2, 70),
+      mkDevice("dev-tamper", "secret-tamper", "TEMP", 210, 2, 70),
+      mkDevice("dev-noisy", "secret-noisy", "TEMP", 200, 2, 70),
+      mkDevice("dev-lowtrust", "secret-lowtrust", "TEMP", 180, 2, 15),
+    ];
+    gatewaySessions = {}; replayState = {}; freshnessBaseline = {}; corroboration = {};
+    ipLimiter = new Map(); deviceLimiter = new Map();
+    ledger = { records: [], pending: [], batches: [], proofs: {}, nextId: 0 };
+    quarantineCount = 0; acceptedCount = 0;
+  }
+  function mkDevice(id, secret, metric, base, noise, trust) {
+    return { id, secret, metric, base, noise, trust, revoked: false, seq: 0, sessionId: "s-invalid",
+             lastRaw: null, lastSeq: null, lastValue: null };
+  }
+  function getDevice(id) { return devices.find((d) => d.id === id); }
+  function penalize(dev, amount = TRUST_PENALTY) { dev.trust = Math.max(0, dev.trust - amount); }
+  function reward(dev, amount = TRUST_REWARD) { dev.trust = Math.min(TRUST_MAX, dev.trust + amount); }
+
+  function rateAllow(map, key, capacity, windowMs = 1000) {
+    const now = Date.now();
+    let entry = map.get(key);
+    if (!entry || now - entry.start >= windowMs) entry = { start: now, count: 0 };
+    if (entry.count >= capacity) { map.set(key, entry); return false; }
+    entry.count += 1; map.set(key, entry); return true;
+  }
+  function replayCheck(deviceId, seq) {
+    const WINDOW = 64, MASK = (1n << 64n) - 1n;
+    let st = replayState[deviceId] || { highest: -1, bitmap: 0n };
+    if (seq > st.highest) {
+      const shift = seq - st.highest;
+      let bitmap = shift >= WINDOW ? 0n : (st.bitmap << BigInt(shift)) & MASK;
+      bitmap |= 1n;
+      replayState[deviceId] = { highest: seq, bitmap };
+      return { ok: true, reason: "ok" };
+    }
+    const offset = st.highest - seq;
+    if (offset >= WINDOW) return { ok: false, reason: `seq ${seq} is older than the ${WINDOW}-message replay window` };
+    if (st.bitmap & (1n << BigInt(offset))) return { ok: false, reason: `seq ${seq} already seen — replay` };
+    st.bitmap |= (1n << BigInt(offset));
+    replayState[deviceId] = st;
+    return { ok: true, reason: "ok" };
+  }
+  function freshnessCheck(deviceId, uptimeMs, receivedAtMs, maxDelayMs) {
+    const base = freshnessBaseline[deviceId];
+    if (!base) { freshnessBaseline[deviceId] = { uptime: uptimeMs, received: receivedAtMs }; return { ok: true, reason: "ok (baseline established)" }; }
+    const expected = uptimeMs - base.uptime, actual = receivedAtMs - base.received;
+    const delay = Math.max(0, actual - expected);
+    if (delay > maxDelayMs) return { ok: false, reason: `arrived ${delay}ms later than its uptime clock accounts for (limit ${maxDelayMs}ms)` };
+    return { ok: true, reason: "ok" };
+  }
+
+  function ledgerAppend(payload) {
+    const id = ledger.nextId++;
+    const record = { id, payload, batchIndex: null, leafIndex: null };
+    ledger.records.push(record); ledger.pending.push(record);
+    return id;
+  }
+  async function flushBatchLedger() {
+    if (ledger.pending.length === 0) return null;
+    const leaves = await Promise.all(ledger.pending.map((r) => leafHash(r.payload)));
+    const levels = await buildTree(leaves);
+    const root = levels[levels.length - 1][0];
+    const prevRoot = ledger.batches.length ? ledger.batches[ledger.batches.length - 1].root : "0".repeat(64);
+    const batchIndex = ledger.batches.length;
+    ledger.pending.forEach((r, i) => { r.batchIndex = batchIndex; r.leafIndex = i; ledger.proofs[r.id] = proofForIndex(levels, i); });
+    const batch = { index: batchIndex, root, prevRoot, size: ledger.pending.length, recordIds: ledger.pending.map((r) => r.id) };
+    ledger.batches.push(batch); ledger.pending = [];
+    return batch;
+  }
+  async function getReceipt(id) {
+    const record = ledger.records.find((r) => r.id === id);
+    if (!record || record.batchIndex == null) return null;
+    return { recordId: id, leafHash: await leafHash(record.payload), proof: ledger.proofs[id], root: ledger.batches[record.batchIndex].root };
+  }
+
+  // ---------- gate UI ----------
+  const gateListEl = document.getElementById("gateList");
+  function initGateUI() {
+    gateListEl.innerHTML = "";
+    GATE_DEFS.forEach(([name, sub], i) => {
+      const li = document.createElement("li");
+      li.className = "gate"; li.id = `gate-${i}`; li.dataset.status = "idle";
+      li.innerHTML = `<span class="gate-chip">G${i}</span>
+        <span><span class="gate-name">${name}</span><div class="gate-reason" data-role="reason">${sub}</div></span>
+        <span class="gate-status-word" data-role="status">idle</span>`;
+      gateListEl.appendChild(li);
+    });
+  }
+  function setGate(i, status, reason) {
+    const li = document.getElementById(`gate-${i}`);
+    li.dataset.status = status;
+    li.querySelector('[data-role="status"]').textContent = status;
+    if (reason) li.querySelector('[data-role="reason"]').textContent = reason;
+  }
+  function skipRest(fromIndex) { for (let i = fromIndex; i < GATE_DEFS.length; i++) setGate(i, "skip", GATE_DEFS[i][1]); }
+  function setOutcome(kind, text) {
+    const el = document.getElementById("outcomeBanner");
+    el.dataset.outcome = kind; el.textContent = text;
+  }
+
+  const eventLogEl = document.getElementById("eventLog");
+  function logEvent(deviceId, kind, text) {
+    if (eventLogEl.firstElementChild && eventLogEl.firstElementChild.classList.contains("log-empty")) eventLogEl.innerHTML = "";
+    const li = document.createElement("li");
+    li.dataset.kind = kind;
+    li.textContent = `${deviceId ?? "—"}  —  ${text}`;
+    eventLogEl.appendChild(li);
+    while (eventLogEl.children.length > 60) eventLogEl.removeChild(eventLogEl.firstChild);
+  }
+
+  function renderDevices() {
+    renderLedger(); // fire-and-forget: keeps the ledger panel in sync with every commit
+    const body = document.getElementById("deviceTableBody");
+    body.innerHTML = "";
+    devices.forEach((dev) => {
+      const tr = document.createElement("tr");
+      const sessionKnown = gatewaySessions[dev.id] && gatewaySessions[dev.id] === dev.sessionId;
+      tr.innerHTML = `
+        <td class="mono">${dev.id}</td>
+        <td><span class="trust-pill ${dev.trust < TRUST_FLOOR ? "low" : ""}">${dev.trust}</span></td>
+        <td><span class="session-tag ${sessionKnown ? "" : "pending"}">${sessionKnown ? "established" : "none yet"}</span></td>
+        <td><div class="btn-row">
+          <button data-act="send" data-dev="${dev.id}">Send reading</button>
+          <button data-act="spike" data-dev="${dev.id}">Send spike</button>
+          <button data-act="replay" data-dev="${dev.id}" ${dev.lastRaw ? "" : "disabled"}>Replay last</button>
+          <button data-act="tamper" data-dev="${dev.id}" ${dev.lastRaw ? "" : "disabled"}>Tamper last</button>
+          <button data-act="flood" data-dev="${dev.id}">Flood x25</button>
+        </div></td>`;
+      body.appendChild(tr);
+    });
+  }
+
+  async function renderLedger() {
+    const info = document.getElementById("ledgerInfo");
+    const lastBatch = ledger.batches[ledger.batches.length - 1];
+    info.innerHTML = `<b>${ledger.records.length}</b> total committed &nbsp;·&nbsp; <b>${ledger.pending.length}</b> pending flush &nbsp;·&nbsp; <b>${ledger.batches.length}</b> batch(es) anchored` +
+      (lastBatch ? `<br>last root: ${lastBatch.root.slice(0, 24)}…` : "");
+
+    const body = document.getElementById("recordsTableBody");
+    if (ledger.records.length === 0) { body.innerHTML = `<tr><td colspan="6" class="muted">No committed records yet.</td></tr>`; return; }
+    body.innerHTML = "";
+    for (const r of ledger.records.slice().reverse()) {
+      const tr = document.createElement("tr");
+      const batchLabel = r.batchIndex == null ? "pending" : `#${r.batchIndex}`;
+      tr.innerHTML = `
+        <td class="mono">#${r.id}</td>
+        <td class="mono">${r.payload.device_id}</td>
+        <td class="mono">${r.payload.seq}</td>
+        <td class="mono">${r.payload.scaled_value}</td>
+        <td class="mono">${batchLabel}</td>
+        <td><div class="btn-row">
+          <button data-act="verify" data-id="${r.id}" ${r.batchIndex == null ? "disabled" : ""}>Verify</button>
+          <button data-act="verify-tampered" data-id="${r.id}" ${r.batchIndex == null ? "disabled" : ""}>Tamper &amp; reverify</button>
+          <span data-role="verify-result" class="mono"></span>
+        </div></td>`;
+      body.appendChild(tr);
+    }
+  }
+
+  // ---------- the pipeline itself ----------
+  async function ingest(rawWire, sourceIp, opts = {}) {
+    const fast = !!opts.fast;
+    const step = fast ? 0 : STEP_MS;
+    if (!fast) initGateUI();
+    const showMsg = document.getElementById("currentMessage");
+    if (!fast) showMsg.textContent = rawWire;
+    const receivedAt = Date.now() + (opts.delayMs || 0);
+
+    if (!fast) { setGate(0, "active"); await sleep(step); }
+    if (!rateAllow(ipLimiter, "ip:" + sourceIp, 20)) {
+      if (!fast) { setGate(0, "fail", `source ${sourceIp} exceeded the IP rate limit`); skipRest(1); setOutcome("rejected", "QUARANTINED — gate 0"); }
+      quarantineCount++;
+      return { accepted: false, gate: "rate_limit_ip" };
+    }
+    if (!fast) setGate(0, "pass", "ok");
+
+    if (!fast) { setGate(1, "active"); await sleep(step); }
+    let fields;
+    try { fields = parseWire(rawWire); }
+    catch (e) {
+      if (!fast) { setGate(1, "fail", e.message); skipRest(2); setOutcome("rejected", "QUARANTINED — gate 1"); }
+      quarantineCount++;
+      return { accepted: false, gate: "canonical_parser" };
+    }
+    if (!fast) setGate(1, "pass", "ok");
+    const deviceId = fields.device_id, seq = fields.seq;
+    const dev = getDevice(deviceId);
+
+    if (!fast) { setGate(2, "active"); await sleep(step); }
+    if (!dev) {
+      if (!fast) { setGate(2, "fail", "unknown device (not enrolled)"); skipRest(3); setOutcome("rejected", "QUARANTINED — gate 2"); }
+      quarantineCount++;
+      return { accepted: false, gate: "trust_ledger_check" };
+    }
+    if (dev.revoked || dev.trust < TRUST_FLOOR) {
+      const reason = dev.revoked ? "device revoked" : `trust score ${dev.trust} below floor ${TRUST_FLOOR}`;
+      if (!fast) { setGate(2, "fail", reason); skipRest(3); setOutcome("rejected", "QUARANTINED — gate 2"); }
+      quarantineCount++;
+      logEvent(deviceId, "fail", `trust_ledger_check: ${reason}`);
+      renderDevices();
+      return { accepted: false, gate: "trust_ledger_check" };
+    }
+    if (!fast) setGate(2, "pass", `score ${dev.trust}`);
+
+    if (!fast) { setGate(3, "active"); await sleep(step); }
+    if (gatewaySessions[deviceId] !== fields.session_id) {
+      const newSid = "s" + Math.random().toString(16).slice(2, 10);
+      gatewaySessions[deviceId] = newSid;
+      dev.sessionId = newSid; // device adopts it, matching edge.adopt_session()
+      if (!fast) { setGate(3, "fail", "no active session — re-challenging (no penalty)"); skipRest(4); setOutcome("rejected", "SESSION ISSUED — send again"); }
+      logEvent(deviceId, "hold", "session_check: re-challenged, new session issued — click “Send reading” again");
+      renderDevices();
+      return { accepted: false, gate: "session_check" };
+    }
+    if (!fast) setGate(3, "pass", "ok");
+
+    if (!fast) { setGate(4, "active"); await sleep(step); }
+    const expectedMac = await hmacHex(dev.secret, fields.header);
+    if (expectedMac !== fields.mac) {
+      if (!fast) { setGate(4, "fail", "HMAC mismatch — message forged or corrupted"); skipRest(5); setOutcome("rejected", "QUARANTINED — gate 4"); }
+      penalize(dev); quarantineCount++;
+      logEvent(deviceId, "fail", "hmac_verify: signature does not match — forged or corrupted");
+      renderDevices();
+      return { accepted: false, gate: "hmac_verify" };
+    }
+    if (!fast) setGate(4, "pass", "ok");
+
+    if (!fast) { setGate(5, "active"); await sleep(step); }
+    const capacity = 5 + Math.floor(dev.trust / 10);
+    if (!rateAllow(deviceLimiter, "dev:" + deviceId, capacity)) {
+      if (!fast) { setGate(5, "fail", `exceeded trust-scaled limit (${capacity}/s)`); skipRest(6); setOutcome("rejected", "QUARANTINED — gate 5"); }
+      penalize(dev); quarantineCount++;
+      logEvent(deviceId, "fail", `adaptive_rate_limit: exceeded ${capacity}/s`);
+      renderDevices();
+      return { accepted: false, gate: "adaptive_rate_limit" };
+    }
+    if (!fast) setGate(5, "pass", `limit ${capacity}/s`);
+
+    if (!fast) { setGate(6, "active"); await sleep(step); }
+    const r6 = replayCheck(deviceId, seq);
+    if (!r6.ok) {
+      if (!fast) { setGate(6, "fail", r6.reason); skipRest(7); setOutcome("rejected", "QUARANTINED — gate 6"); }
+      penalize(dev); quarantineCount++;
+      logEvent(deviceId, "fail", `replay_window: ${r6.reason}`);
+      renderDevices();
+      return { accepted: false, gate: "replay_window" };
+    }
+    if (!fast) setGate(6, "pass", "ok");
+
+    if (!fast) { setGate(7, "active"); await sleep(step); }
+    const r7 = freshnessCheck(deviceId, fields.uptime_ms, receivedAt, 5000);
+    if (!r7.ok) {
+      if (!fast) { setGate(7, "fail", r7.reason); skipRest(8); setOutcome("rejected", "QUARANTINED — gate 7"); }
+      penalize(dev); quarantineCount++;
+      logEvent(deviceId, "fail", `freshness_check: ${r7.reason}`);
+      renderDevices();
+      return { accepted: false, gate: "freshness_check" };
+    }
+    if (!fast) setGate(7, "pass", "ok");
+
+    // Resolve any reading held by a *previous* message before judging this one.
+    let resolvedNote = "";
+    const pending = corroboration[deviceId];
+    if (pending) {
+      delete corroboration[deviceId];
+      const diff = Math.abs(fields.scaled_value - pending.value);
+      if (diff <= CORROB_TOLERANCE) {
+        const rid = ledgerAppend(pending.fields);
+        reward(dev);
+        resolvedNote = ` [resolved hold seq=${pending.seq} → confirmed, record #${rid}]`;
+        logEvent(deviceId, "pass", `plausibility_hold resolved: seq ${pending.seq} confirmed → committed as #${rid}`);
+      } else {
+        penalize(dev, TRUST_SOFT_PENALTY);
+        resolvedNote = ` [resolved hold seq=${pending.seq} → denied, quarantined]`;
+        logEvent(deviceId, "fail", `plausibility_hold resolved: seq ${pending.seq} not corroborated — quarantined as noise`);
+        quarantineCount++;
+      }
+    }
+
+    if (!fast) { setGate(8, "active"); await sleep(step); }
+    const [lo, hi] = PLAUSIBLE_RANGE, val = fields.scaled_value;
+    if (val < lo || val > hi) {
+      if (!fast) { setGate(8, "fail", `value ${val} outside physical range [${lo},${hi}]${resolvedNote}`); skipRest(9); setOutcome("rejected", "QUARANTINED — gate 8"); }
+      penalize(dev); quarantineCount++;
+      logEvent(deviceId, "fail", `plausibility_hold: value ${val} outside range`);
+      renderDevices();
+      return { accepted: false, gate: "plausibility_hold" };
+    }
+    const slew = dev.lastValue == null ? 0 : Math.abs(val - dev.lastValue);
+    if (slew > MAX_SLEW && slew <= MAX_SLEW + HOLD_BAND) {
+      dev.lastValue = val;
+      corroboration[deviceId] = { seq, value: val, fields };
+      if (!fast) { setGate(8, "hold", `slew ${slew} borderline — held for corroboration${resolvedNote}`); skipRest(9); setOutcome("held", "HELD — awaiting next reading to confirm or deny"); }
+      logEvent(deviceId, "hold", `plausibility_hold: slew ${slew} held for corroboration (seq ${seq})`);
+      renderDevices();
+      return { accepted: false, gate: "plausibility_hold", held: true };
+    }
+    if (slew > MAX_SLEW + HOLD_BAND) {
+      if (!fast) { setGate(8, "fail", `slew ${slew} exceeds any plausible sensor rate${resolvedNote}`); skipRest(9); setOutcome("rejected", "QUARANTINED — gate 8"); }
+      penalize(dev); quarantineCount++;
+      logEvent(deviceId, "fail", `plausibility_hold: slew ${slew} implausible`);
+      renderDevices();
+      return { accepted: false, gate: "plausibility_hold" };
+    }
+    if (!fast) setGate(8, "pass", (slew ? `slew ${slew}` : "baseline reading") + resolvedNote);
+    dev.lastValue = val;
+
+    if (!fast) { setGate(9, "active"); await sleep(step); }
+    const recordId = ledgerAppend(fields);
+    reward(dev);
+    acceptedCount++;
+    if (!fast) { setGate(9, "pass", `record #${recordId} — pending batch flush`); setOutcome("accepted", `COMMITTED — record #${recordId}`); }
+    logEvent(deviceId, "pass", `commit: accepted as record #${recordId}`);
+    renderDevices();
+    return { accepted: true, gate: null, recordId };
+  }
+
+  // ---------- scenario wiring ----------
+  document.getElementById("deviceTableBody").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const dev = getDevice(btn.dataset.dev);
+    setButtonsDisabled(true);
+    try {
+      if (btn.dataset.act === "send") {
+        const raw = await buildMessage(dev);
+        await ingest(raw, "10.0.0." + (devices.indexOf(dev) + 1));
+      } else if (btn.dataset.act === "spike") {
+        const target = (dev.lastValue ?? dev.base) + 90;
+        const raw = await buildMessage(dev, target);
+        await ingest(raw, "10.0.0." + (devices.indexOf(dev) + 1));
+      } else if (btn.dataset.act === "replay") {
+        await ingest(dev.lastRaw, "10.0.0." + (devices.indexOf(dev) + 1));
+      } else if (btn.dataset.act === "tamper") {
+        const parts = dev.lastRaw.split(" ");
+        const forgedValue = parseInt(parts[5], 10) + 777;
+        parts[5] = String(forgedValue);
+        await ingest(parts.join(" "), "10.0.0." + (devices.indexOf(dev) + 1));
+      } else if (btn.dataset.act === "flood") {
+        const ip = "6.6.6." + (devices.indexOf(dev) + 1);
+        let blocked = 0;
+        for (let i = 0; i < 25; i++) {
+          const raw = await buildMessage(dev);
+          const res = await ingest(raw, ip, { fast: true });
+          if (!res.accepted && res.gate === "rate_limit_ip") blocked++;
+        }
+        initGateUI();
+        setGate(0, "fail", `${blocked}/25 messages blocked by the IP rate limit`);
+        skipRest(1);
+        setOutcome("rejected", `FLOOD TEST — ${blocked}/25 blocked at gate 0`);
+        document.getElementById("currentMessage").textContent = `flood from ${ip}: 25 messages sent back-to-back`;
+        logEvent(dev.id, "fail", `flood: ${blocked}/25 blocked by gate 0 IP rate limit`);
+        await renderLedger();
+      }
+    } finally {
+      setButtonsDisabled(false);
+    }
+  });
+
+  function setButtonsDisabled(disabled) {
+    document.querySelectorAll("#deviceTableBody button, #flushBtn").forEach((b) => { b.disabled = disabled && !b.dataset.keepEnabled; });
+    renderDevices(); // re-render clears any stale disabled state from lastRaw checks after the click completes
+  }
+
+  document.getElementById("flushBtn").addEventListener("click", async () => {
+    const batch = await flushBatchLedger();
+    await renderLedger();
+    if (batch) logEvent(null, "pass", `ledger flush: batch #${batch.index} anchored, ${batch.size} records, root ${batch.root.slice(0, 16)}…`);
+    else logEvent(null, "hold", "ledger flush: nothing pending");
+  });
+
+  document.getElementById("recordsTableBody").addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const id = parseInt(btn.dataset.id, 10);
+    const resultEl = btn.parentElement.querySelector('[data-role="verify-result"]');
+    const receipt = await getReceipt(id);
+    if (btn.dataset.act === "verify") {
+      const ok = await verifyProofChain(receipt.leafHash, receipt.proof, receipt.root);
+      resultEl.innerHTML = ok ? '<span class="verify-ok">✓ verified</span>' : '<span class="verify-bad">✗ failed</span>';
+    } else {
+      const forged = { ...receipt, leafHash: "0".repeat(64) };
+      const ok = await verifyProofChain(forged.leafHash, forged.proof, forged.root);
+      resultEl.innerHTML = ok ? '<span class="verify-ok">✓ verified (unexpected!)</span>' : '<span class="verify-bad">✗ forged receipt rejected</span>';
+    }
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", async () => {
+    freshState();
+    initGateUI();
+    document.getElementById("currentMessage").textContent = "— send a message to see it here —";
+    setOutcome("", "Waiting for a message.");
+    document.getElementById("outcomeBanner").removeAttribute("data-outcome");
+    eventLogEl.innerHTML = '<li class="log-empty">Nothing sent yet.</li>';
+    renderDevices();
+    await renderLedger();
+  });
+
+  // ---------- boot ----------
+  freshState();
+  initGateUI();
+  renderDevices();
+  renderLedger();
+})();
+</script>

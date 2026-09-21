@@ -4,3 +4,5 @@ __pycache__/
 *.DS_Store
 .cache/
 datasets/
+_data/
+_gateway_demo_data/

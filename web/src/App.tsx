@@ -15,6 +15,7 @@ import Compliance from './pages/Compliance'
 import Carrier from './pages/Carrier'
 import Analytics from './pages/Analytics'
 import Audit from './pages/Audit'
+import Gateway from './pages/Gateway'
 import Copilot from './pages/Copilot'
 import Roadmap from './pages/Roadmap'
 import Settings from './pages/Settings'
@@ -61,6 +62,7 @@ export default function App() {
       case 'carrier': return <Carrier go={go} id={route.id} />
       case 'analytics': return <Analytics />
       case 'audit': return <Audit />
+      case 'gateway': return <Gateway go={go} />
       case 'copilot': return <Copilot go={go} />
       case 'roadmap': return <Roadmap />
       case 'settings': return <Settings onHealth={() => setHealth(true)} />

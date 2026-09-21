@@ -26,11 +26,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from api import importer
+from api.gateway_routes import bootstrap_from_dataset
+from api.gateway_routes import router as gateway_router
 from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
 from sdoc_reconciler import DocumentReconciler, select_documents
 from sdoc_security import TamperEvidentAuditLedger
+from security_layer.gates import RateLimiter
 
 BUNDLE = ROOT / "sdoc-hackathon-bundle"
 DATASETS_DIR = ROOT / "datasets"
@@ -47,6 +50,22 @@ HERO_EMAIL, HERO_SHIPMENT = "email_043", "SHP-2048"
 
 app = FastAPI(title="NavisAI API", version="1.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.include_router(gateway_router)
+
+# Whole-system protection: the same rate-limiting primitive the email
+# gateway uses per sender domain, applied per client IP in front of every
+# API route — the front door gets the same treatment as the front desk.
+_api_limiter = RateLimiter(window_s=1.0)
+_API_RATE_CAPACITY = 100
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else "unknown"
+    if not _api_limiter.allow(f"api:{client_ip}", _API_RATE_CAPACITY):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=429, content={"detail": "rate limit exceeded"})
+    return await call_next(request)
 
 classifier = EmailClassifier()
 extractor = FieldExtractor()
@@ -394,3 +413,9 @@ def delete_dataset(ds: str):
     DATASETS.pop(ds, None)
     shutil.rmtree(d.root, ignore_errors=True)
     return {"deleted": ds}
+
+
+# Run the real demo inbox through the real email-intake gateway once, at
+# import time — by the time the app serves its first request, the trust
+# scores and audit ledger already reflect the actual 520-email inbox.
+bootstrap_from_dataset(DATASETS["demo"], run_email)

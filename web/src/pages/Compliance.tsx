@@ -9,6 +9,49 @@ import { cn, sleep } from '@/lib/utils'
 
 interface CheckResult { name: string; pass: boolean; detail: string }
 
+interface SenderSecurityReport {
+  checked: boolean
+  accepted?: boolean
+  domain?: string
+  failed_gate?: string | null
+  reason?: string
+  trust_score_after?: number | null
+  outcome?: 'accepted' | 'rejected' | 'held'
+}
+
+async function fetchSenderSecurity(emailId: string): Promise<SenderSecurityReport> {
+  try {
+    const res = await fetch(`/api/gateway/email-check/${encodeURIComponent(emailId)}`)
+    if (!res.ok) return { checked: false }
+    return (await res.json()) as SenderSecurityReport
+  } catch {
+    return { checked: false }
+  }
+}
+
+function senderSecurityCheck(r: SenderSecurityReport): CheckResult | null {
+  if (!r.checked) return null
+  if (r.outcome === 'accepted') {
+    return {
+      name: 'Sender Security (Trust Gateway)',
+      pass: true,
+      detail: `${r.domain} cleared all 10 gates — authenticated, not a duplicate, trust score ${r.trust_score_after}. Committed to the provable audit ledger.`,
+    }
+  }
+  if (r.outcome === 'held') {
+    return {
+      name: 'Sender Security (Trust Gateway)',
+      pass: false,
+      detail: `${r.domain}'s document mismatch was held for corroboration rather than committed outright — awaiting the next email from this sender to confirm or dismiss the pattern.`,
+    }
+  }
+  return {
+    name: 'Sender Security (Trust Gateway)',
+    pass: false,
+    detail: `${r.domain} was quarantined at gate "${r.failed_gate}": ${r.reason}. This email never reached the audit ledger.`,
+  }
+}
+
 function evaluate(d: EmailDetail): CheckResult[] {
   const row = (k: string) => d.comparison.find((c) => c.key === k)
   const ok = (...ks: string[]) => ks.every((k) => row(k)?.match)
@@ -39,7 +82,10 @@ export default function Compliance({ go, id }: { go: (p: Page, id?: string) => v
 
   const start = useCallback(async (detail: EmailDetail) => {
     const me = ++run.current
-    const c = evaluate(detail)
+    const [docChecks, sender] = await Promise.all([evaluate(detail), fetchSenderSecurity(detail.id)])
+    if (run.current !== me) return
+    const sc = senderSecurityCheck(sender)
+    const c = sc ? [...docChecks, sc] : docChecks
     setChecks(c)
     setN(0)
     for (let i = 1; i <= c.length; i++) {
@@ -74,7 +120,7 @@ export default function Compliance({ go, id }: { go: (p: Page, id?: string) => v
     <div>
       <PageHeader
         title="Compliance Gate"
-        sub="A final, high-confidence gate before documents are released. Every check is computed from the extracted document data."
+        sub="A final, high-confidence gate before documents are released — document checks plus the real Trust Gateway verdict on the sender who sent them."
         right={
           <div className="flex items-center gap-2">
             <select value={cur} onChange={(e) => go('compliance', e.target.value)} className="h-9 max-w-[280px] rounded-lg border border-white/12 bg-card px-3 text-[13px] outline-none">
@@ -154,6 +200,12 @@ export default function Compliance({ go, id }: { go: (p: Page, id?: string) => v
             <div className="flex items-center justify-between bg-warn/[0.05] px-5 py-3.5">
               <span className="text-xs text-amber-200">Resolve the discrepancy before release.</span>
               <Button size="sm" variant="primary" onClick={() => go('carrier', d.id)}>Prepare amendment</Button>
+            </div>
+          )}
+          {done && !clear && d?.status !== 'MISMATCH' && checks.some((c) => c.name === 'Sender Security (Trust Gateway)' && !c.pass) && (
+            <div className="flex items-center justify-between bg-bad/[0.06] px-5 py-3.5">
+              <span className="text-xs text-red-200">The sender itself failed security review — not a paperwork problem.</span>
+              <Button size="sm" variant="primary" onClick={() => go('gateway')}>Open Trust Gateway</Button>
             </div>
           )}
         </div>

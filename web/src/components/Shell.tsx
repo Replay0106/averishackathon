@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Activity, BarChart3, Bot, CheckCircle2, ChevronRight, FileSearch, Gauge, GitCompareArrows, History, Inbox, Map, FolderPlus, Search, Send, Settings, ShieldCheck, Sparkles, type LucideIcon,
+  Activity, BarChart3, Bot, CheckCircle2, ChevronRight, FileSearch, Gauge, GitCompareArrows, History, Inbox, Map, FolderPlus, RadioTower, Search, Send, Settings, ShieldCheck, Sparkles, type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { LogoMark, Wordmark } from './Logo'
@@ -19,6 +19,7 @@ const MAIN: { page: Page; label: string; icon: LucideIcon }[] = [
   { page: 'carrier', label: 'Carrier Actions', icon: Send },
   { page: 'analytics', label: 'Analytics', icon: BarChart3 },
   { page: 'audit', label: 'Audit Trail', icon: History },
+  { page: 'gateway', label: 'Trust Gateway', icon: RadioTower },
 ]
 
 function NavItem({ active, label, icon: Icon, onClick, id, badge }: { active: boolean; label: string; icon: LucideIcon; onClick: () => void; id?: string; badge?: number }) {
@@ -167,6 +168,7 @@ export function CommandPalette({ open, onClose, go, onImport }: { open: boolean;
       { id: 'c7', group: 'Commands', label: 'View audit trail', hint: 'Go to', icon: History, run: () => go('audit') },
       { id: 'c8', group: 'Commands', label: 'View roadmap', hint: 'Go to', icon: Map, run: () => go('roadmap') },
       { id: 'c9', group: 'Commands', label: 'Compliance gate', hint: 'Go to', icon: ShieldCheck, run: () => go('compliance') },
+      { id: 'c11', group: 'Commands', label: 'Open trust gateway', hint: 'Go to', icon: RadioTower, run: () => go('gateway') },
     ],
     [go, hero, onImport],
   )

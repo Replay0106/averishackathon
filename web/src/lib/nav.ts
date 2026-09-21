@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 
 export type Page =
   | 'overview' | 'inbox' | 'verification' | 'discrepancies' | 'compliance'
-  | 'carrier' | 'analytics' | 'audit' | 'copilot' | 'settings' | 'roadmap'
+  | 'carrier' | 'analytics' | 'audit' | 'gateway' | 'copilot' | 'settings' | 'roadmap'
 
 export interface Route { page: Page; id?: string; auto?: boolean }
 
-const PAGES: Page[] = ['overview', 'inbox', 'verification', 'discrepancies', 'compliance', 'carrier', 'analytics', 'audit', 'copilot', 'settings', 'roadmap']
+const PAGES: Page[] = ['overview', 'inbox', 'verification', 'discrepancies', 'compliance', 'carrier', 'analytics', 'audit', 'gateway', 'copilot', 'settings', 'roadmap']
 
 function parse(): Route {
   const [, p, id, flag] = window.location.hash.split('/')
