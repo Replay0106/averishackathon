@@ -4,7 +4,7 @@
   "functions": {
     "api/**/*.py": {
       "maxDuration": 60,
-      "includeFiles": "{sdoc-hackathon-bundle/**,sdoc_*.py,security_layer/**,audit_ledger.json,datasets/**,web/dist/**,web/src/data/snapshot.json}"
+      "includeFiles": "{sdoc-hackathon-bundle/**,*.py,security_layer/**,audit_ledger.json,datasets/**,web/dist/**,web/src/data/snapshot.json}"
     }
   }
 }

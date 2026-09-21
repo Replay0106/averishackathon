@@ -16,6 +16,7 @@ import base64
 import json
 import logging
 import os
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -28,7 +29,23 @@ from pydantic import BaseModel
 logger = logging.getLogger("navisai.gmail.api")
 
 ROOT = Path(__file__).resolve().parent.parent
-DATASETS_DIR = ROOT / "datasets"
+
+
+def _get_datasets_dir() -> Path:
+    d = ROOT / "datasets"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        test = d / ".write_test"
+        test.touch()
+        test.unlink()
+        return d
+    except Exception:
+        tmp_d = Path(tempfile.gettempdir()) / "navis_datasets"
+        tmp_d.mkdir(parents=True, exist_ok=True)
+        return tmp_d
+
+
+DATASETS_DIR = _get_datasets_dir()
 
 # ---------------------------------------------------------------------------
 # Router
@@ -119,100 +136,106 @@ def gmail_simulate(req: SimulateRequest):
     Allows hackathon judges and evaluators to test autonomous inbox ingestion,
     MIME unpacking, zero-shot intent triage, and 7-field compliance checks in 1 click.
     """
-    from gmail_watcher import GmailWatcher, gmail_message_to_pipeline_json
+    try:
+        from gmail_watcher import GmailWatcher, gmail_message_to_pipeline_json
 
-    ds_id = _state.dataset_id or "gmail_live"
-    ds_dir = DATASETS_DIR / ds_id
-    (ds_dir / "inbox").mkdir(parents=True, exist_ok=True)
-    (ds_dir / "attachments").mkdir(parents=True, exist_ok=True)
+        ds_id = _state.dataset_id or "gmail_live"
+        ds_dir = DATASETS_DIR / ds_id
+        (ds_dir / "inbox").mkdir(parents=True, exist_ok=True)
+        (ds_dir / "attachments").mkdir(parents=True, exist_ok=True)
 
-    if not _state.watcher:
-        _state.watcher = GmailWatcher(
-            dataset_dir=ds_dir,
-            credentials_path=ROOT / "credentials.json",
-            token_path=ROOT / "token.json",
-            state_path=ROOT / "gmail_state.json",
-        )
-    _state.dataset_id = ds_id
-    _ensure_dataset_registered(ds_id, ds_dir)
+        if not _state.watcher:
+            state_file = ds_dir / "gmail_state.json"
+            _state.watcher = GmailWatcher(
+                dataset_dir=ds_dir,
+                credentials_path=ROOT / "credentials.json",
+                token_path=ROOT / "token.json",
+                state_path=state_file,
+            )
+        _state.dataset_id = ds_id
+        _ensure_dataset_registered(ds_id, ds_dir)
 
-    counter = _state.watcher._state.get("email_counter", 0) + 1
-    _state.watcher._state["email_counter"] = counter
-    email_id = f"gmail_{counter:03d}"
-    gmail_id = f"sim_{base64.b16encode(os.urandom(8)).decode().lower()}"
-    gmail_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+        counter = _state.watcher._state.get("email_counter", 0) + 1
+        _state.watcher._state["email_counter"] = counter
+        email_id = f"gmail_{counter:03d}"
+        gmail_id = f"sim_{base64.b16encode(os.urandom(8)).decode().lower()}"
+        gmail_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
 
-    if req.kind == "invoice_query":
-        sender = "billing@transocean-logistics.com"
-        subject = f"Invoice clarification request for Booking {req.booking_ref}"
-        body = (
-            f"Dear Averis Operations,\n\n"
-            f"We have issued invoice #INV-88391 for booking {req.booking_ref}. "
-            f"Please review the origin terminal handling charge (THC) breakdown.\n\n"
-            f"Kind regards,\nFinance & Billing Team"
-        )
-        record = gmail_message_to_pipeline_json(
-            email_id=email_id,
-            sender=sender,
-            subject=subject,
-            body=body,
-            attachments=[],
-            output_dir=ds_dir,
-            gmail_id=gmail_id,
-            gmail_date=gmail_date,
-        )
-        _state.watcher._state.setdefault("processed_ids", []).append(gmail_id)
-        _state.watcher._save_state()
+        if req.kind == "invoice_query":
+            sender = "billing@transocean-logistics.com"
+            subject = f"Invoice clarification request for Booking {req.booking_ref}"
+            body = (
+                f"Dear Averis Operations,\n\n"
+                f"We have issued invoice #INV-88391 for booking {req.booking_ref}. "
+                f"Please review the origin terminal handling charge (THC) breakdown.\n\n"
+                f"Kind regards,\nFinance & Billing Team"
+            )
+            record = gmail_message_to_pipeline_json(
+                email_id=email_id,
+                sender=sender,
+                subject=subject,
+                body=body,
+                attachments=[],
+                output_dir=ds_dir,
+                gmail_id=gmail_id,
+                gmail_date=gmail_date,
+            )
+            _state.watcher._state.setdefault("processed_ids", []).append(gmail_id)
+            _state.watcher._save_state()
 
-    elif req.kind == "spam":
-        sender = "newsletter@freight-specials-promo.net"
-        subject = "Exclusive freight discounts on transpacific routes - 40% OFF"
-        body = (
-            "Limited time shipping container freight discount rates for Asia-Europe and Transpacific lanes! "
-            "Book now to claim 40% container haulage credits."
-        )
-        record = gmail_message_to_pipeline_json(
-            email_id=email_id,
-            sender=sender,
-            subject=subject,
-            body=body,
-            attachments=[],
-            output_dir=ds_dir,
-            gmail_id=gmail_id,
-            gmail_date=gmail_date,
-        )
-        _state.watcher._state.setdefault("processed_ids", []).append(gmail_id)
-        _state.watcher._save_state()
+        elif req.kind == "spam":
+            sender = "newsletter@freight-specials-promo.net"
+            subject = "Exclusive freight discounts on transpacific routes - 40% OFF"
+            body = (
+                "Limited time shipping container freight discount rates for Asia-Europe and Transpacific lanes! "
+                "Book now to claim 40% container haulage credits."
+            )
+            record = gmail_message_to_pipeline_json(
+                email_id=email_id,
+                sender=sender,
+                subject=subject,
+                body=body,
+                attachments=[],
+                output_dir=ds_dir,
+                gmail_id=gmail_id,
+                gmail_date=gmail_date,
+            )
+            _state.watcher._state.setdefault("processed_ids", []).append(gmail_id)
+            _state.watcher._save_state()
 
-    else:
-        # Standard BL Comparison (with or without discrepancy)
-        email_id = _state.watcher.simulate_incoming_email(
-            has_discrepancy=req.has_discrepancy,
-            booking_ref=req.booking_ref,
-            shipper=req.shipper,
-            consignee=req.consignee,
-        )
+        else:
+            # Standard BL Comparison (with or without discrepancy)
+            email_id = _state.watcher.simulate_incoming_email(
+                has_discrepancy=req.has_discrepancy,
+                booking_ref=req.booking_ref,
+                shipper=req.shipper,
+                consignee=req.consignee,
+            )
 
-    _state.total_ingested += 1
-    _state.last_poll = datetime.utcnow().isoformat() + "Z"
-    _state.last_poll_count = 1
+        _state.total_ingested += 1
+        _state.last_poll = datetime.utcnow().isoformat() + "Z"
+        _state.last_poll_count = 1
 
-    # Run sdoc verification pipeline
-    _process_new_emails([email_id])
+        # Run sdoc verification pipeline
+        _process_new_emails([email_id])
 
-    result_data = None
-    if _state.dataset_ref and email_id in _state.dataset_ref.cache:
-        result_data = _state.dataset_ref.cache[email_id]
+        result_data = None
+        if _state.dataset_ref and email_id in _state.dataset_ref.cache:
+            result_data = _state.dataset_ref.cache[email_id]
 
-    return {
-        "status": "ok",
-        "email_id": email_id,
-        "dataset_id": ds_id,
-        "has_discrepancy": req.has_discrepancy,
-        "kind": req.kind,
-        "result": result_data,
-        "message": f"Simulated email {email_id} ingested into {ds_id} and verified.",
-    }
+        return {
+            "status": "ok",
+            "email_id": email_id,
+            "dataset_id": ds_id,
+            "has_discrepancy": req.has_discrepancy,
+            "kind": req.kind,
+            "result": result_data,
+            "message": f"Simulated email {email_id} ingested into {ds_id} and verified.",
+        }
+    except Exception as e:
+        import traceback
+        logger.error("Simulation error: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(500, f"Simulation failed: {type(e).__name__}: {e}")
 
 
 @gmail_router.post("/connect")
@@ -419,11 +442,14 @@ def _ensure_dataset_registered(ds_id: str, ds_dir: Path) -> None:
         if ds_id not in DATASETS:
             ds = Dataset(ds_id, "Gmail Live Inbox", ds_dir, kind="gmail")
             meta_path = ds_dir / "meta.json"
-            meta_path.write_text(json.dumps({
-                "name": "Gmail Live Inbox",
-                "created": ds.created,
-                "kind": "gmail",
-            }), encoding="utf-8")
+            try:
+                meta_path.write_text(json.dumps({
+                    "name": "Gmail Live Inbox",
+                    "created": ds.created,
+                    "kind": "gmail",
+                }), encoding="utf-8")
+            except Exception:
+                pass
             DATASETS[ds_id] = ds
             _state.dataset_ref = ds
             logger.info("Registered gmail dataset: %s", ds_id)
