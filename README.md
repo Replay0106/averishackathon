@@ -384,8 +384,6 @@ Interactive OpenAPI docs are at `http://localhost:8000/docs` when the API runs.
 | [AVERIS_FIT.md](AVERIS_FIT.md) | Fit with Averis's public priorities and the pitch reasoning |
 | [COMPETITIVE_ADVANTAGE_AUDIT.md](COMPETITIVE_ADVANTAGE_AUDIT.md) | Measured strengths and claims to avoid |
 | [FEATURE_AUDIT.md](FEATURE_AUDIT.md) | Audit against the hackathon rubric and results history |
-| [AUTO_AMENDMENT_PLAN.md](AUTO_AMENDMENT_PLAN.md) | Design of the automatic amendment flow |
-| [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md), [WALKTHROUGH.md](WALKTHROUGH.md) | Product scope, design system, guided tour |
 | [web/README.md](web/README.md) | Web app notes |
 
 ---

@@ -11,3 +11,10 @@ token.json
 gmail_state.json
 
 .vercel
+
+# Local working notes kept out of the repository
+APEX_AUDIT.md
+DESIGN.md
+PRODUCT.md
+WALKTHROUGH.md
+AUTO_AMENDMENT_PLAN.md
