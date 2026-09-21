@@ -21,30 +21,41 @@ def main():
     print("🧪 NavisAI | Automated Regression Test Suite")
     print("=" * 70)
     
-    loader = unittest.TestLoader()
-    suite = loader.discover("tests", pattern="test_*.py")
-    
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    
-    print("=" * 70)
-    total = result.testsRun
-    failures = len(result.failures)
-    errors = len(result.errors)
-    passed = total - failures - errors
-    
-    print(f"📊 Test Results Summary:")
-    print(f"  Total Tests:  {total}")
-    print(f"  Passed:       {passed} ({(passed/total*100):.1f}%)")
-    print(f"  Failures:     {failures}")
-    print(f"  Errors:       {errors}")
-    print("=" * 70)
-    
-    if not result.wasSuccessful():
-        sys.exit(1)
-    else:
-        print("✨ All regression tests passed successfully!")
-        sys.exit(0)
+    try:
+        import pytest
+        print("⚡ Running via pytest runner (discovering all unittest & pytest suites)...")
+        exit_code = pytest.main(["-v", "tests"])
+        if exit_code == 0:
+            print("=" * 70)
+            print("✨ All regression tests passed successfully!")
+            sys.exit(0)
+        else:
+            sys.exit(exit_code)
+    except ImportError:
+        loader = unittest.TestLoader()
+        suite = loader.discover("tests", pattern="test_*.py")
+        
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        
+        print("=" * 70)
+        total = result.testsRun
+        failures = len(result.failures)
+        errors = len(result.errors)
+        passed = total - failures - errors
+        
+        print(f"📊 Test Results Summary:")
+        print(f"  Total Tests:  {total}")
+        print(f"  Passed:       {passed} ({(passed/total*100):.1f}%)")
+        print(f"  Failures:     {failures}")
+        print(f"  Errors:       {errors}")
+        print("=" * 70)
+        
+        if not result.wasSuccessful():
+            sys.exit(1)
+        else:
+            print("✨ All regression tests passed successfully!")
+            sys.exit(0)
 
 
 if __name__ == "__main__":

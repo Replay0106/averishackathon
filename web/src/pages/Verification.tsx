@@ -127,7 +127,7 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
         ? { text: 'READY TO VERIFY', tone: 'text-ink2' }
         : { text: 'ANALYSING…', tone: 'text-sky' }
       : d.status === 'OK'
-        ? { text: 'ALL 7 FIELDS VERIFIED', tone: 'text-ok' }
+        ? { text: 'NO MISMATCH DETECTED (ALL 7 FIELDS VERIFIED)', tone: 'text-ok' }
         : d.status === 'MISMATCH'
           ? { text: `${nBad} DISCREPANC${nBad === 1 ? 'Y' : 'IES'} DETECTED`, tone: 'text-bad' }
           : { text: 'REVIEW REQUIRED', tone: 'text-warn' }

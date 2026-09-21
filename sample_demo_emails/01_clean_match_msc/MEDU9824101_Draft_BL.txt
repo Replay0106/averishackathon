@@ -1,0 +1,20 @@
+MEDITERRANEAN SHIPPING COMPANY S.A. - DRAFT BILL OF LADING
+============================================================
+B/L Number:           MSCU9824101
+Booking Reference:    MEDU-9824101
+Ocean Vessel:         MSC ISABELLA
+Voyage:               2601W
+Shipper:              APRIL FAR EAST (M) SDN BHD
+                      LOT 12, JALAN KELANG LAMA, SELANGOR, MALAYSIA
+Consignee:            AL GURG STATIONERY LLC
+                      P.O. BOX 325, DEIRA, DUBAI, UAE
+Notify Address:       SAME AS CONSIGNEE
+Port of Loading:      PORT KLANG, MALAYSIA
+Port of Discharge:    JEBEL ALI, UAE
+Total Containers:     10 x 40'HC
+Total Gross Weight:   245,000.00 KGS
+Total Measurement:    650.00 CBM
+Description of Goods: PRIME BLEACHED HARDWOOD KRAFT PULP IN BALES
+Freight Term:         FREIGHT PREPAID
+============================================================
+THIS IS A NON-NEGOTIABLE DRAFT COPY FOR APPROVAL

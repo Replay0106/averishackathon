@@ -1,0 +1,17 @@
+TRANSOCEAN LOGISTICS - COMMERCIAL FREIGHT INVOICE
+============================================================
+Invoice Number:       INV-88391
+Invoice Date:         22-SEP-2026
+Due Date:             06-OCT-2026
+Customer:             AVERIS TRADE LOGISTICS OPERATIONS
+Booking Reference:    INV-88391
+
+Description                             Amount (USD)
+------------------------------------------------------------
+Ocean Freight (10 x 40'HC)                 $18,500.00
+Origin Terminal Handling Charge (THC)       $1,250.00
+Documentation Fee                             $150.00
+Bunker Adjustment Factor (BAF)              $2,100.00
+------------------------------------------------------------
+Total Amount Due:                          $22,000.00
+============================================================

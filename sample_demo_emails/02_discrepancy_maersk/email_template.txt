@@ -1,0 +1,13 @@
+SUBJECT:
+URGENT: Draft B/L for Booking MAEU-7731201 - Review Discrepancy
+
+BODY:
+Dear Trade Operations,
+
+Please review attached Draft B/L against your Shipping Instructions for Booking MAEU-7731201 on vessel MAERSK MC-KINNEY MOLLER V.2602E.
+
+Please verify container allocations and gross cargo weights. Advise if revision is needed prior to vessel cut-off.
+
+Best regards,
+Maersk Line Customer Service
+export.docs@maersk.com

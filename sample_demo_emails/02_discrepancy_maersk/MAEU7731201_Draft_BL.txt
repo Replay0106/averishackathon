@@ -1,0 +1,20 @@
+MAERSK LINE - VERIFICATION DRAFT BILL OF LADING
+============================================================
+B/L Number:           MAEU7731201
+Booking Reference:    MAEU-7731201
+Vessel Name:          MAERSK MC-KINNEY MOLLER
+Voyage:               2602E
+Shipper:              APRIL FAR EAST (M) SDN BHD
+                      LOT 12, JALAN KELANG LAMA, SELANGOR, MALAYSIA
+Consignee:            AL GURG STATIONERY LLC
+                      P.O. BOX 325, DEIRA, DUBAI, UAE
+Notify Party:         SAME AS CONSIGNEE
+Port of Loading:      PORT KLANG, MALAYSIA
+Port of Discharge:    JEBEL ALI, UAE
+Total Containers:     8 x 40'HC
+Total Gross Weight:   231,000.00 KGS
+Total Measurement:    520.00 CBM
+Goods Description:    WOOD PULP SHEETS IN BALES
+Freight:              FREIGHT PREPAID
+============================================================
+ATTENTION: VERIFY CONTAINER COUNT (8) AND GROSS WEIGHT (231000 KGS)

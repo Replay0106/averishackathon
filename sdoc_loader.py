@@ -130,8 +130,20 @@ class InboxLoader:
 
     def _parse_pdf(self, att: AttachmentData, full_path: Path, raw_bytes: bytes) -> None:
         if PdfReader is None:
-            att.is_corrupted = True
-            att.error_message = "pypdf not installed"
+            if not raw_bytes.startswith(b"%PDF") or len(raw_bytes) < 1000:
+                att.is_corrupted = True
+                att.error_message = "Corrupt PDF stream or pypdf not installed"
+                return
+            if b"/Image" in raw_bytes or b"/XObject" in raw_bytes:
+                att.is_scanned = True
+                return
+            text_chunks = re.findall(rb"\(([^)]+)\)", raw_bytes)
+            if text_chunks:
+                att.text = "\n".join(c.decode("latin-1", errors="ignore") for c in text_chunks)
+                if len(att.text.strip()) < 50:
+                    att.is_scanned = True
+            else:
+                att.is_scanned = True
             return
 
         try:

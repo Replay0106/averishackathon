@@ -58,6 +58,8 @@ interface Ctx {
   act: (id: string, action: string, details?: Record<string, unknown>) => Promise<void>
   ask: (q: string) => Promise<CopilotReply>
   refreshAudit: () => Promise<void>
+  refresh: () => Promise<void>
+  simulateEmail: (opts: { has_discrepancy?: boolean; booking_ref?: string; kind?: string }) => Promise<{ status: string; email_id: string; dataset_id: string; message: string; result?: any } | null>
 }
 
 const C = createContext<Ctx>(null as never)
@@ -262,9 +264,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [dataset, refreshDatasets, switchDataset],
   )
 
+  const refresh = useCallback(async () => {
+    const [list, sum] = await Promise.all([
+      api<EmailRow[]>(withDs('/api/emails')),
+      api<Summary>(withDs('/api/summary')),
+      refreshDatasets(),
+      refreshAudit(),
+    ])
+    if (list && sum) {
+      setEmails(list)
+      setSummary(sum)
+      setLive(true)
+      setRes(Object.fromEntries(list.filter((e) => e.resolution).map((e) => [e.id, e.resolution as Resolution])))
+    }
+  }, [withDs, refreshDatasets, refreshAudit])
+
+  const simulateEmail = useCallback(
+    async (opts: { has_discrepancy?: boolean; booking_ref?: string; kind?: string }) => {
+      const res = await api<{ status: string; email_id: string; dataset_id: string; message: string; result?: any }>('/api/gmail/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(opts),
+      })
+      if (res && res.status === 'ok') {
+        await refreshDatasets()
+        if (dataset !== res.dataset_id) {
+          switchDataset(res.dataset_id)
+        } else {
+          await refresh()
+        }
+        return res
+      }
+      return null
+    },
+    [dataset, refresh, refreshDatasets, switchDataset],
+  )
+
   const value = useMemo(
-    () => ({ ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit }),
-    [ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit],
+    () => ({ ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit, refresh, simulateEmail }),
+    [ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit, refresh, simulateEmail],
   )
   return <C.Provider value={value}>{children}</C.Provider>
 }

@@ -6,3 +6,6 @@ __pycache__/
 datasets/
 _data/
 _gateway_demo_data/
+credentials.json
+token.json
+gmail_state.json

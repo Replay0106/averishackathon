@@ -7,7 +7,6 @@ NavisAI automates the entire operational lifecycle from **unstructured operation
 ---
 
 ## 1. System Architecture & Information Flow
-
 ```mermaid
 flowchart TD
     subgraph S1 ["Stage 1: Multi-Format Ingestion & Triage"]
@@ -108,6 +107,20 @@ flowchart TD
 
 ---
 
+### 2.5 Stage 5: Autonomous Gmail Live Inbox Listener & Auto-Trigger
+- **Core Files**: [`gmail_watcher.py`](file:///c:/Users/DoneWIthWork/Desktop/averishackathon/gmail_watcher.py) and [`api/gmail_ingest.py`](file:///c:/Users/DoneWIthWork/Desktop/averishackathon/api/gmail_ingest.py)
+- **Zero-Shortcuts First-Principles Architecture**:
+  - Direct integration with Google Cloud Gmail API v1 using OAuth2 desktop authorization flow (`credentials.json` + `token.json`).
+  - High-efficiency `historyId` delta synchronization (`users.history.list`) avoiding expensive duplicate full-mailbox fetches.
+  - Robust RFC 2822 payload decoder: recurses nested multipart MIME trees, extracts headers (`Subject`, `From`, `Date`), strips scripts/HTML tags, and normalizes email bodies.
+  - Multi-part attachment extraction: decodes base64url data chunks, enforces 50MB safety caps, and applies regex filename sanitization against directory traversal (`../`).
+  - Content-based document type classifier (`_detect_doc_type_from_bytes`) to identify SI vs BL on arrival.
+  - Dual Execution Modes:
+    1. **Standalone CLI Watcher**: Continuous background polling loop (`--watch --interval 30 --trigger-pipeline`) with automatic pipeline dispatch.
+    2. **FastAPI Background Service**: REST endpoints (`/api/gmail/status`, `/api/gmail/start`, `/api/gmail/stop`, `/api/gmail/poll`, `/api/gmail/connect`) running in a daemon thread.
+
+---
+
 ## 3. Benchmark Verification & Edge-Case Handling
 
 The benchmark test set includes 5 deliberate edge-case clusters. NavisAI handles all 5 flawlessly:
@@ -164,7 +177,9 @@ All system behaviors are guarded by an automated regression test suite located i
 | Test Module | Coverage Area | Tests | Status |
 |---|---|:---:|:---:|
 | `test_classifier.py` | 5 category recognition, benchmark email classification, 520 inbox distribution | 3 | ✅ Pass |
-| `test_extractor.py` | 7-field extraction, scanned documents (`512`–`514`), placeholders (`516`–`520`), offline fallback | 4 | ✅ Pass |
+| `test_extractor.py` | 7-field extraction, scanned documents (`512`–`514`), placeholders (`516`–`520`), offline fallback | 5 | ✅ Pass |
+| `test_gmail_watcher.py` | OAuth2, history delta sync, MIME parsing, attachment extraction, doc classification, query filters, state persistence | 28 | ✅ Pass |
+| `test_import.py` | Multi-format folder/EML import, safe path extraction, >1000 file ingestion capacity | 7 | ✅ Pass |
 | `test_reconciler.py` | Clean matches, defect identification, `unreadable`, `wrong_doc_type`, `missing_value` | 5 | ✅ Pass |
 | `test_hitl_persistence.py` | Human approval persistence, lead escalation persistence to `submission.json` | 2 | ✅ Pass |
 | `test_pipeline.py` | 520 email batch run, 100% key parity with `sample_submission.json`, all 5 edge-case clusters | 3 | ✅ Pass |
@@ -174,7 +189,7 @@ All system behaviors are guarded by an automated regression test suite located i
 | `test_security.py` | Forwarder spoofing detection, PDF payload sandbox, PII masking, SHA-256 audit ledger | 4 | ✅ Pass |
 | `test_monitor.py` | Client rectification notice drafting, dispatch persistence to submission and audit ledger | 2 | ✅ Pass |
 
-**Total Suite Result**: **32/32 tests passing (100.0%) in 0.562 seconds**.
+**Total Suite Result**: **68/68 tests passing (100.0%)**.
 
 ---
 
@@ -182,17 +197,61 @@ All system behaviors are guarded by an automated regression test suite located i
 
 ### 1. Run the Automated Regression Test Suite:
 ```powershell
-cd "C:\Users\Jer Khai\Documents\Averis_Hackathon\NavisAI-copilot"
+cd "c:\Users\DoneWIthWork\Desktop\averishackathon"
 .\venv\Scripts\python.exe run_tests.py
 ```
+Or run individual modules:
+```powershell
+.\venv\Scripts\python.exe -m pytest tests/test_gmail_watcher.py -v
+```
 
-### 2. Run the Autonomous Batch Pipeline:
+### 2. Run the Autonomous Gmail Watcher (Live Inbox Polling):
+```powershell
+# One-time polling check
+.\venv\Scripts\python.exe gmail_watcher.py --poll-once
+
+# Continuous daemon with auto-triggering of pipeline upon new mail
+.\venv\Scripts\python.exe gmail_watcher.py --watch --interval 30 --trigger-pipeline
+```
+
+### 3. Run the Autonomous Batch Pipeline:
 ```powershell
 .\venv\Scripts\python.exe sdoc_pipeline.py --bundle "sdoc-hackathon-bundle" --output "submission.json"
 ```
 
-### 3. Launch the Interactive Enterprise Cockpit:
+### 4. Launch the Interactive Enterprise Cockpit:
 ```powershell
 .\venv\Scripts\streamlit.exe run app.py --server.port 8502
 ```
 Active local instance accessible at: **`http://localhost:8502`**
+
+### 5. Launch the FastAPI Backend & Modern Web App:
+```powershell
+# Backend API (includes Gmail ingestion endpoints)
+.\venv\Scripts\python.exe -m uvicorn api.main:app --reload --port 8000
+
+# React + Vite Frontend
+cd web
+npm run dev
+```
+
+### 6. Judge 1-Click Zero-Credential Simulation:
+1. Open the Web App (`http://localhost:5173`) and navigate to **Inbox Triage**.
+2. Click the **`[ ⚡ Simulate Inbound Gmail ]`** button in the header.
+3. Choose one of the 3 realistic simulation presets:
+   - **Clean Match (7/7)**: Simulates matching SI + Draft BL (`MEDU-98241`). Status: `OK (7/7 verified)`.
+   - **Discrepancy (Audit Flag)**: Simulates gross weight mismatch 231,000 kg vs 245,000 kg (`MAEU-77312`). Status: `MISMATCH`.
+   - **NLP Intent Triage**: Simulates general invoice clarification query. Status: `INVOICE_QUERY`.
+4. Observe real-time row animation with `LIVE INGEST` tag, toast notification, and instant verification drill-down.
+
+### 7. Sending Real Live Emails (`sample_demo_emails/`):
+1. Run the live watcher daemon:
+   ```powershell
+   .\venv\Scripts\python.exe gmail_watcher.py --watch --interval 15 --trigger-pipeline
+   ```
+2. Open your email client (phone, personal email, etc.) and compose an email to your demo Gmail address.
+3. Use the ready-to-send templates & attachments from [`sample_demo_emails/`](./sample_demo_emails/):
+   - **Clean 7/7 Match**: Copy from `01_clean_match_msc/email_template.txt`, attach `MEDU9824101_SI.txt` & `MEDU9824101_Draft_BL.txt`.
+   - **Discrepancy Demo**: Copy from `02_discrepancy_maersk/email_template.txt`, attach `MAEU7731201_SI.txt` & `MAEU7731201_Draft_BL.txt`.
+   - **Intent Triage Demo**: Copy from `03_invoice_query/email_template.txt` and attach `Invoice_INV88391.txt`.
+4. Send the email and watch it appear in the terminal and in the **Gmail Live Inbox** dataset in <15 seconds!

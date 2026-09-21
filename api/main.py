@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from api import importer
 from api.gateway_routes import bootstrap_from_dataset
 from api.gateway_routes import router as gateway_router
+from api.gmail_ingest import gmail_router
 from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
@@ -51,6 +52,7 @@ HERO_EMAIL, HERO_SHIPMENT = "email_043", "SHP-2048"
 app = FastAPI(title="NavisAI API", version="1.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.include_router(gateway_router)
+app.include_router(gmail_router)
 
 # Whole-system protection: the same rate-limiting primitive the email
 # gateway uses per sender domain, applied per client IP in front of every

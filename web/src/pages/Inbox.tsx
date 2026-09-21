@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { FileText, Mail, Paperclip, Search, Sparkles } from 'lucide-react'
+import { Download, FileText, Mail, Paperclip, Search, Sparkles, Zap } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFly } from '@/components/Fly'
+import { SimulateGmailModal } from '@/components/SimulateGmailModal'
 import { Badge, Button, Empty, PageHeader, Progress, StatusBadge, type Tone, ease } from '@/components/ui'
 import type { Page } from '@/lib/nav'
 import { useApp } from '@/lib/store'
@@ -85,6 +86,7 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
   const [cat, setCat] = useState<Category | 'ALL'>('ALL')
   const [open, setOpen] = useState<string | null>(initialId ?? null)
   const [limit, setLimit] = useState(40)
+  const [simOpen, setSimOpen] = useState(false)
 
   const counts = useMemo(() => {
     const m: Record<string, number> = { ALL: emails.length }
@@ -102,9 +104,50 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
   }, [q, cat])
   const shown = Math.max(limit, (open ? list.findIndex((e) => e.id === open) : -1) + 1)
 
+  const exportCsv = () => {
+    const headers = ['Email ID', 'Shipment', 'Sender', 'Subject', 'Category', 'Status', 'Review Reason', 'Defect Fields', 'Attachments']
+    const rows = emails.map((e) => [
+      e.id,
+      e.shipment,
+      `"${(e.sender || '').replace(/"/g, '""')}"`,
+      `"${(e.subject || '').replace(/"/g, '""')}"`,
+      e.category,
+      e.status,
+      e.review_reason || '',
+      `"${(e.defect_fields || []).join('; ')}"`,
+      `"${(e.attachments || []).join('; ')}"`,
+    ])
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement('a')
+    link.setAttribute('href', encodedUri)
+    link.setAttribute('download', `navisai_audit_report_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   return (
     <div>
-      <PageHeader title="Inbox Triage" sub="Every inbound message is classified on arrival. Select an email to inspect its attachments and send it into verification." />
+      <PageHeader
+        title="Inbox Triage"
+        sub="Every inbound message is classified on arrival. Select an email to inspect its attachments and send it into verification."
+        right={
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="primary"
+              icon={<Zap className="size-3.5 text-yellow-300" />}
+              onClick={() => setSimOpen(true)}
+            >
+              Simulate Inbound Gmail
+            </Button>
+            <Button size="sm" icon={<Download className="size-3.5" />} onClick={exportCsv}>
+              Export CSV Report
+            </Button>
+          </div>
+        }
+      />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex h-9 min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 transition focus-within:border-sky/50 md:max-w-sm">
           <Search className="size-4 text-ink3" />
@@ -132,9 +175,14 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
             return (
               <motion.div key={e.id} variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }} className="border-b border-white/[0.05] last:border-0">
                 <button onClick={() => setOpen(isOpen ? null : e.id)} className={cn('grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,2.4fr)_120px_150px_116px] items-center gap-4 px-6 py-3 text-left transition-colors max-lg:grid-cols-[1fr_auto]', isOpen ? 'bg-white/[0.05]' : 'hover:bg-white/[0.03]')}>
-                  <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
                     <span className={cn('size-1.5 shrink-0 rounded-full transition-colors', isOpen ? 'bg-brand' : e.category === 'BL_COMPARISON' ? 'bg-sky' : 'bg-white/20')} />
                     <span className="truncate text-[13px] font-medium capitalize">{senderName(e.sender)}</span>
+                    {e.id.startsWith('gmail_') && (
+                      <span className="rounded border border-sky/30 bg-sky/10 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider text-sky">
+                        Live Ingest
+                      </span>
+                    )}
                   </div>
                   <div className="flex min-w-0 items-center gap-2 max-lg:hidden">
                     <span className="truncate text-[13px] text-ink2">{e.subject}</span>
@@ -155,6 +203,15 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
           </div>
         )}
       </div>
+
+      <SimulateGmailModal
+        open={simOpen}
+        onClose={() => setSimOpen(false)}
+        onSimulated={(id) => {
+          setOpen(id)
+          setCat('ALL')
+        }}
+      />
     </div>
   )
 }
