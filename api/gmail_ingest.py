@@ -462,3 +462,11 @@ def _process_new_emails(new_email_ids: list) -> None:
 
     except ImportError as e:
         logger.warning("Pipeline import failed: %s", e)
+
+
+# Fallback export so Vercel function discovery finds an ASGI app if scanned
+try:
+    from api.main import app
+except Exception:
+    pass
+

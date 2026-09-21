@@ -3,7 +3,7 @@ import { AlertTriangle, Check, RotateCcw, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, PageHeader, ease } from '@/components/ui'
 import type { Page } from '@/lib/nav'
-import { useApp } from '@/lib/store'
+import { resolveApiPath, useApp } from '@/lib/store'
 import type { EmailDetail } from '@/lib/types'
 import { cn, sleep } from '@/lib/utils'
 
@@ -21,7 +21,7 @@ interface SenderSecurityReport {
 
 async function fetchSenderSecurity(emailId: string): Promise<SenderSecurityReport> {
   try {
-    const res = await fetch(`/api/gateway/email-check/${encodeURIComponent(emailId)}`)
+    const res = await fetch(resolveApiPath(`/api/gateway/email-check/${encodeURIComponent(emailId)}`))
     if (!res.ok) return { checked: false }
     return (await res.json()) as SenderSecurityReport
   } catch {

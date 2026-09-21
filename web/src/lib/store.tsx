@@ -19,11 +19,18 @@ export interface PickedFile { file: File; path: string }
 let snapshotPromise: Promise<Snapshot> | null = null
 const loadSnapshot = () => (snapshotPromise ??= import('../data/snapshot.json').then((m) => m.default as unknown as Snapshot))
 
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') || ''
+
+export function resolveApiPath(path: string): string {
+  if (!API_BASE) return path
+  return path.startsWith('/') ? `${API_BASE}${path}` : `${API_BASE}/${path}`
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
     const ctl = new AbortController()
     const t = setTimeout(() => ctl.abort(), 6000)
-    const res = await fetch(path, { ...init, signal: ctl.signal })
+    const res = await fetch(resolveApiPath(path), { ...init, signal: ctl.signal })
     clearTimeout(t)
     if (!res.ok) return null
     return (await res.json()) as T
@@ -232,7 +239,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       files.forEach((f) => form.append('files', f.file, f.file.name))
       let res: Response
       try {
-        res = await fetch('/api/datasets/import', { method: 'POST', body: form })
+        res = await fetch(resolveApiPath('/api/datasets/import'), { method: 'POST', body: form })
       } catch {
         throw new Error('Cannot reach the NavisAI API. Start it with: uvicorn api.main:app --port 8000')
       }
@@ -257,7 +264,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteDataset = useCallback(
     async (id: string) => {
-      await fetch(`/api/datasets/${id}`, { method: 'DELETE' })
+      await fetch(resolveApiPath(`/api/datasets/${id}`), { method: 'DELETE' })
       await refreshDatasets()
       if (dataset === id) switchDataset('demo')
     },

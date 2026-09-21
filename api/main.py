@@ -23,6 +23,8 @@ sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from api import importer
@@ -37,7 +39,23 @@ from sdoc_security import TamperEvidentAuditLedger
 from security_layer.gates import RateLimiter
 
 BUNDLE = ROOT / "sdoc-hackathon-bundle"
-DATASETS_DIR = ROOT / "datasets"
+
+
+def _get_datasets_dir() -> Path:
+    d = ROOT / "datasets"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        test = d / ".write_test"
+        test.touch()
+        test.unlink()
+        return d
+    except Exception:
+        tmp_d = Path(tempfile.gettempdir()) / "navis_datasets"
+        tmp_d.mkdir(parents=True, exist_ok=True)
+        return tmp_d
+
+
+DATASETS_DIR = _get_datasets_dir()
 FIELDS = [
     ("shipper", "Shipper"),
     ("consignee", "Consignee"),
@@ -85,6 +103,19 @@ class Dataset:
         self.overrides: Dict[str, Dict[str, Any]] = {}
         self.timing: Dict[str, float] = {}
         self.job: Dict[str, Any] = {"status": "ready", "done": 0, "total": 0, "failed": []}
+        if self.id == "demo":
+            self._seed_cache_from_snapshot()
+
+    def _seed_cache_from_snapshot(self) -> None:
+        snap_path = ROOT / "web" / "src" / "data" / "snapshot.json"
+        if snap_path.is_file():
+            try:
+                snap = json.loads(snap_path.read_text(encoding="utf-8"))
+                details = snap.get("details", {})
+                if isinstance(details, dict):
+                    self.cache.update(details)
+            except Exception:
+                pass
 
     def info(self) -> Dict[str, Any]:
         return {"id": self.id, "name": self.name, "kind": self.kind, "created": self.created,
@@ -232,6 +263,29 @@ def _apply_override(d: Dataset, r: Dict[str, Any]) -> Dict[str, Any]:
 def _summary_row(d: Dataset, r: Dict[str, Any]) -> Dict[str, Any]:
     keys = ("id", "shipment", "sender", "subject", "category", "status", "review_reason", "defect_fields", "confidence", "attachments", "meta")
     return {k: r[k] for k in keys} | {"resolution": d.overrides.get(r["id"])}
+
+
+@app.get("/api")
+def root():
+    import os
+    d = DATASETS["demo"]
+    return {
+        "status": "operational",
+        "service": "NavisAI Verification Engine API",
+        "version": "1.1",
+        "environment": "serverless" if "VERCEL" in os.environ else "standard",
+        "emails": len(d.loader.get_email_ids()),
+        "endpoints": {
+            "health": "/api/health",
+            "emails": "/api/emails",
+            "summary": "/api/summary",
+            "audit": "/api/audit",
+            "copilot": "/api/copilot",
+            "gateway_state": "/api/gateway/state",
+            "gateway_ledger": "/api/gateway/ledger",
+            "datasets": "/api/datasets",
+        },
+    }
 
 
 @app.get("/api/health")
@@ -421,3 +475,33 @@ def delete_dataset(ds: str):
 # import time — by the time the app serves its first request, the trust
 # scores and audit ledger already reflect the actual 520-email inbox.
 bootstrap_from_dataset(DATASETS["demo"], run_email)
+
+# ---------------------------------------------------------------------------
+# Frontend SPA & Static Files Serving
+# Enables serving the compiled React frontend directly from FastAPI, both
+# locally (via uvicorn) and when deployed serverless on Vercel.
+# ---------------------------------------------------------------------------
+DIST_DIR = ROOT / "web" / "dist"
+if (DIST_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+
+
+@app.get("/{full_path:path}")
+async def serve_spa_app(full_path: str):
+    if full_path.startswith("api") or full_path in ("docs", "openapi.json", "redoc"):
+        raise HTTPException(404, "Not Found")
+
+    target = DIST_DIR / full_path
+    if full_path and target.is_file():
+        return FileResponse(target)
+
+    index_html = DIST_DIR / "index.html"
+    if index_html.is_file():
+        return FileResponse(index_html)
+
+    return {
+        "status": "operational",
+        "service": "NavisAI Verification Engine",
+        "error": "Frontend build not found. Run 'npm run build' in web/.",
+    }
+

@@ -3,7 +3,7 @@ import { RadioTower, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Page } from '@/lib/nav'
 import { Badge, Button, Empty, PageHeader, Panel, SectionTitle } from '@/components/ui'
-import { useApp } from '@/lib/store'
+import { resolveApiPath, useApp } from '@/lib/store'
 import { cn, sleep } from '@/lib/utils'
 
 const REVEAL_STEP_MS = 220
@@ -59,7 +59,7 @@ type ChainStep = { label: string; hash: string }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(path, init)
+    const res = await fetch(resolveApiPath(path), init)
     if (!res.ok) return null
     return (await res.json()) as T
   } catch {

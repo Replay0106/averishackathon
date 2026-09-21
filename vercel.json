@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd web && npm install && npm run build",
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 60,
+      "includeFiles": "{sdoc-hackathon-bundle/**,sdoc_*.py,security_layer/**,audit_ledger.json,datasets/**,web/dist/**,web/src/data/snapshot.json}"
+    }
+  }
+}

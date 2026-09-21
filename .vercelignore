@@ -1,0 +1,48 @@
+# Vercel deployment ignore rules
+# Prevents large local virtualenvs, caches, and test files from bloating the deployment upload
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local sensitive configs (must be set in Vercel Project Environment Variables)
+.env
+.env.local
+.env.*.local
+credentials.json
+token.json
+gmail_state.json
+
+# Local dependencies & builds (Vercel builds fresh in CI)
+node_modules/
+web/node_modules/
+web/dist/
+
+# Test suites & developer-only scripts
+tests/
+run_tests.py
+generate_clean_data.py
+generate_mock_data.py
+
+# Non-production demo assets
+demo/
+demo_explainer/
+sample_demo_emails/
+sample_data/
+sample_data_clean/
+
+# IDE & agent cache folders
+.git/
+.cache/
+.codex/
+.claude/
+.agents/

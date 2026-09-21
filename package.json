@@ -1,0 +1,12 @@
+{
+  "name": "navisai-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NavisAI — Autonomous Document Verification & Zero-Trust Email Gateway",
+  "scripts": {
+    "build": "npm --prefix web run build",
+    "dev": "npm --prefix web run dev",
+    "typecheck": "npm --prefix web run typecheck",
+    "preview": "npm --prefix web run preview"
+  }
+}

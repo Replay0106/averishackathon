@@ -236,3 +236,11 @@ def reset():
     if _DATASET_REF is not None and _RUN_EMAIL_REF is not None:
         bootstrap_from_dataset(_DATASET_REF, _RUN_EMAIL_REF)
     return _state_snapshot()
+
+
+# Fallback export so Vercel function discovery finds an ASGI app if scanned
+try:
+    from api.main import app
+except Exception:
+    pass
+

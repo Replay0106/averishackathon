@@ -167,3 +167,11 @@ def normalise(staging: Path, dest: Path) -> Dict[str, Any]:
     if report["emails"] == 0:
         raise ImportError_("No emails found. Expected an inbox/*.json + attachments/ bundle, or .eml files.")
     return report
+
+
+# Fallback export so Vercel function discovery finds an ASGI app if scanned
+try:
+    from api.main import app
+except Exception:
+    pass
+
