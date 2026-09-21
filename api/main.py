@@ -620,8 +620,25 @@ bootstrap_from_dataset(DATASETS["demo"], run_email)
 # locally (via uvicorn) and when deployed serverless on Vercel.
 # ---------------------------------------------------------------------------
 DIST_DIR = ROOT / "web" / "dist"
-if (DIST_DIR / "assets").is_dir():
-    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+ASSETS_DIR = DIST_DIR / "assets"
+
+
+@app.get("/assets/{asset_name:path}")
+async def serve_asset(asset_name: str):
+    target = ASSETS_DIR / asset_name
+    if target.is_file():
+        return FileResponse(target, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    # Graceful fallback for browsers with stale tabs requesting older bundle chunks
+    if asset_name.startswith("index-") and asset_name.endswith(".js"):
+        for js_file in sorted(ASSETS_DIR.glob("index-*.js")):
+            return FileResponse(js_file, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+    if asset_name.startswith("index-") and asset_name.endswith(".css"):
+        for css_file in sorted(ASSETS_DIR.glob("index-*.css")):
+            return FileResponse(css_file, media_type="text/css", headers={"Cache-Control": "no-cache"})
+
+    raise HTTPException(404, "Asset not found")
 
 
 @app.get("/{full_path:path}")
@@ -635,7 +652,14 @@ async def serve_spa_app(full_path: str):
 
     index_html = DIST_DIR / "index.html"
     if index_html.is_file():
-        return FileResponse(index_html)
+        return FileResponse(
+            index_html,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     return {
         "status": "operational",

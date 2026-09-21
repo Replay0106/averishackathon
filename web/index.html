@@ -5,6 +5,17 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NavisAI — Autonomous Trade Intelligence</title>
+    <script>
+      window.addEventListener('error', function(e) {
+        if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+          var k = 'navisai_chunk_retry_' + (e.target.src || e.target.href);
+          if (!sessionStorage.getItem(k)) {
+            sessionStorage.setItem(k, '1');
+            window.location.reload();
+          }
+        }
+      }, true);
+    </script>
   </head>
   <body>
     <div id="root"></div>
