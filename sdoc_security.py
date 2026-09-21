@@ -13,6 +13,7 @@ import hashlib
 import threading
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 class SecurityGuard:
@@ -122,7 +123,25 @@ class TamperEvidentAuditLedger:
     for human approvals, escalations and dispatches. Not certified against any standard.
     """
     def __init__(self, ledger_file: str = "audit_ledger.json"):
-        self.ledger_file = ledger_file
+        p = Path(ledger_file)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            test = p.parent / ".ledger_write_test"
+            test.touch()
+            test.unlink()
+            self.ledger_file = str(p)
+        except Exception:
+            import shutil
+            import tempfile
+            tmp_p = Path(tempfile.gettempdir()) / "navis_cache" / p.name
+            tmp_p.parent.mkdir(parents=True, exist_ok=True)
+            if not tmp_p.is_file() and p.is_file():
+                try:
+                    shutil.copyfile(p, tmp_p)
+                except Exception:
+                    pass
+            self.ledger_file = str(tmp_p)
+
         self.blocks: List[Dict[str, Any]] = []
         self._lock = threading.RLock()
         self._load()
