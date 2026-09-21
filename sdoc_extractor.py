@@ -84,6 +84,28 @@ class FieldExtractor:
         default_cache = Path(__file__).resolve().parent / ".cache" / "vision_cache.json"
         self.cache_path = Path(cache_path) if cache_path else default_cache
 
+    def _log_call(self, cache_key: str, model: str, started: float, resp: Any = None, error: Optional[Exception] = None, image_bytes: int = 0) -> None:
+        """Append one line per live vision call (latency, tokens, outcome) to .cache/vision_calls.jsonl.
+        Records no document content, only a hash prefix, so cost and latency can be reported from real calls."""
+        usage = getattr(resp, "usage_metadata", None) if resp is not None else None
+        entry = {
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "doc": cache_key[:12],
+            "model": model,
+            "image_bytes": image_bytes,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+            "outcome": "ok" if error is None else type(error).__name__,
+            "prompt_tokens": getattr(usage, "prompt_token_count", None),
+            "output_tokens": getattr(usage, "candidates_token_count", None),
+            "total_tokens": getattr(usage, "total_token_count", None),
+        }
+        try:
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.cache_path.parent / "vision_calls.jsonl", "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + chr(10))
+        except Exception:
+            pass
+
     def _cache_get(self, key: str) -> Optional[Dict[str, Any]]:
         try:
             return json.loads(self.cache_path.read_text(encoding="utf-8")).get(key)
@@ -151,13 +173,13 @@ class FieldExtractor:
         return self._extract_via_text(att)
 
     HEADER_BOUNDARY = re.compile(
-        r"^(?:Shipper|Exporter|Consignee|Notify|POL|POD|Port\s*of|No\.\s*of|Gross|Net|Booking|B/L|Freight|Vessel|Voy|Description)",
+        r"^(?:\d{1,2}[.)]\s*)?(?:Shipper|Exporter|Consignee|Party|Notify|Load|POL|POD|Port\s*of|No\.\s*of|Container|Equipment|Total|Gross|Net|Booking|B/L|Freight|Vessel|Voy|Description)",
         re.IGNORECASE
     )
 
     def _find_field(self, pattern: str, text: str) -> Optional[str]:
         # 1. Look for header on a line
-        m = re.search(r"(?:^|\n)[ \t]*(?:" + pattern + r")[^\r\n:]*:[ \t]*([^\r\n;]*)", text, re.IGNORECASE)
+        m = re.search(r"(?:^|\n)[ \t]*(?:\d{1,2}[.)][ \t]*)?(?:" + pattern + r")[^\r\n:]*:[ \t]*([^\r\n;]*)", text, re.IGNORECASE)
         if m:
             val = m.group(1).strip()
             if val:
@@ -169,13 +191,18 @@ class FieldExtractor:
                 return "N/A"  # Explicit empty field placeholder
             return first_line
 
+        # 1b. Dotted-leader form: "3. PARTY TO NOTIFY ...... value"
+        m_dot = re.search(r"(?:^|\n)[ \t]*(?:\d{1,2}[.)][ \t]*)?(?:" + pattern + r")[^\n:.]*?[ \t]*\.{2,}[ \t]*([^\n;]+)", text, re.IGNORECASE)
+        if m_dot and m_dot.group(1).strip():
+            return m_dot.group(1).strip()
+
         # 2. Fallback to dash/pipe separated
-        m_sep = re.search(r"(?:^|\n)\s*(?:" + pattern + r")[^\n:]*(?:\s[\-\u2013]\s|\s*\|\s*)([^\n;]+)", text, re.IGNORECASE)
+        m_sep = re.search(r"(?:^|\n)\s*(?:\d{1,2}[.)][ \t]*)?(?:" + pattern + r")[^\n:]*(?:\s[\-\u2013]\s|\s*\|\s*)([^\n;]+)", text, re.IGNORECASE)
         if m_sep:
             return m_sep.group(1).strip()
 
         # 3. Fallback to newline separated (label on line N without colon, value on line N+1)
-        m2 = re.search(r"(?:^|\n)\s*(?:" + pattern + r")[^\n:]*\n\s*([^\n;]+)", text, re.IGNORECASE)
+        m2 = re.search(r"(?:^|\n)\s*(?:\d{1,2}[.)][ \t]*)?(?:" + pattern + r")[^\n:]*\n\s*([^\n;]+)", text, re.IGNORECASE)
         if m2:
             val2 = m2.group(1).strip()
             if not self.HEADER_BOUNDARY.match(val2):
@@ -215,7 +242,7 @@ class FieldExtractor:
     CONFLICT_PATTERNS = [
         ("shipper", r"Shipper|Exporter"),
         ("consignee", r"Consignee|To the Order of"),
-        ("notify_party", r"Notify\s*Party|Notify"),
+        ("notify_party", r"Notify\s*Party|Party\s+to\s+Notify|Notify"),
         ("port_of_loading", r"Port of Loading|Load Port|POL"),
         ("port_of_discharge", r"Port of Discharge|Discharge Port|POD"),
         ("container_count", r"Total Containers|Container Count|No\.?\s*of Containers"),
@@ -226,7 +253,7 @@ class FieldExtractor:
         """Flags a document that states the same field twice with different values."""
         for name, pattern in self.CONFLICT_PATTERNS:
             seen = []
-            for m in re.finditer(r"(?:^|\n)[ \t]*(?:" + pattern + r")[^\r\n:]*:[ \t]*([^\r\n;]*)", text, re.IGNORECASE):
+            for m in re.finditer(r"(?:^|\n)[ \t]*(?:\d{1,2}[.)][ \t]*)?(?:" + pattern + r")[^\r\n:]*:[ \t]*([^\r\n;]*)", text, re.IGNORECASE):
                 val = m.group(1).strip()
                 if val and not self._is_placeholder(val):
                     seen.append(" ".join(val.upper().split()))
@@ -263,7 +290,7 @@ class FieldExtractor:
                 self._record_evidence(fields, "consignee", val, r"Consignee|To the Order of|CONSIGNEE", text)
 
         # 3. Notify Party
-        raw_val = self._find_field(r"Notify\s*Party|Notify|NOTIFY", text)
+        raw_val = self._find_field(r"Notify\s*Party|Party\s+to\s+Notify|Notify|NOTIFY", text)
         if raw_val:
             val = self._clean_entity(raw_val)
             if self._is_placeholder(val):
@@ -271,7 +298,7 @@ class FieldExtractor:
                 fields.missing_field_name = "notify_party"
             else:
                 fields.notify_party = val
-                self._record_evidence(fields, "notify_party", val, r"Notify\s*Party|Notify|NOTIFY", text)
+                self._record_evidence(fields, "notify_party", val, r"Notify\s*Party|Party\s+to\s+Notify|Notify|NOTIFY", text)
 
         # 4. Port of Loading (POL)
         raw_val = self._find_field(r"Port of Loading|Load Port|POL|Port of Load", text)
@@ -296,7 +323,7 @@ class FieldExtractor:
                 self._record_evidence(fields, "port_of_discharge", val, r"Port of Discharge|Discharge Port|POD|Port of Disch", text)
 
         # 6. Container Count
-        raw_val = self._find_field(r"Total Containers|Container Count|No\.?\s*of Containers|Containers?|Packages?", text)
+        raw_val = self._find_field(r"Total Containers|Container Count|No\.?\s*of Containers|Containers?|Equipment|Packages?", text)
         if raw_val:
             raw_c = raw_val.strip()
             if self._is_placeholder(raw_c):
@@ -399,6 +426,7 @@ Return ONLY a JSON object:
                     continue
                 for model_name in models_to_try:
                     for retry in range(2):
+                        started = time.perf_counter()
                         try:
                             resp = client.models.generate_content(
                                 model=model_name,
@@ -408,12 +436,14 @@ Return ONLY a JSON object:
                                 ],
                                 config={"response_mime_type": "application/json"}
                             )
+                            self._log_call(cache_key, model_name, started, resp=resp, image_bytes=len(image_bytes))
                             data = json.loads(resp.text)
                             result = self._from_vision(data, att)
                             if result.is_legible:
                                 self._cache_put(cache_key, data)
                             return result
                         except Exception as e:
+                            self._log_call(cache_key, model_name, started, error=e, image_bytes=len(image_bytes))
                             err_str = str(e)
                             if "PerDay" in err_str or "DailyQuota" in err_str:
                                 # per-model daily quota on this key: try next model in cascade

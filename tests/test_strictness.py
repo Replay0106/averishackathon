@@ -164,5 +164,30 @@ class TestClassifierIntent(unittest.TestCase):
         self.assertEqual(self.classify(mail), "GENERAL")
 
 
+class TestLabelVariants(unittest.TestCase):
+    """Real inbox wording seen in test-doc-3: alternative labels and numbered dotted-leader forms."""
+
+    def test_party_to_notify_and_equipment_labels(self):
+        text = ("BILL OF LADING - DRAFT\n" + "=" * 20 + "\n"
+                "Shipper: ATLAS COMMERCIAL PAPER CO\nConsignee: GLOBAL FIBRE TRADERS PTE LTD\n"
+                "Party to Notify: ORBITAL PACKAGING SOLUTIONS\nPort of Loading: PORT KLANG, MALAYSIA (MYPKG)\n"
+                "Port of Discharge: HO CHI MINH CITY, VIETNAM (VNCLI)\nEquipment: 3 x 40GP\nGross Weight (KG): 71197 KG\n")
+        f = FieldExtractor().extract(att("x_BL.txt", "BL", text))
+        self.assertEqual(f.notify_party, "ORBITAL PACKAGING SOLUTIONS")
+        self.assertEqual(f.container_count, 3)
+        self.assertEqual(f.gross_weight_kg, 71197.0)
+        self.assertFalse(f.has_missing_placeholder)
+
+    def test_numbered_dotted_leader_form(self):
+        text = ("SHIPPING INSTRUCTION / REF BK129999643\n"
+                "1. SHIPPER .............. PACIFIC OFFICE SUPPLIES PTE LTD\n2. CONSIGNEE ......... MERIDIAN PAPER TRADING SDN BHD\n"
+                "3. PARTY TO NOTIFY ...... MERIDIAN PAPER TRADING SDN BHD\n4. LOAD PORT .............. MOMBASA, KENYA (KEMBA)\n"
+                "5. POD .............. MERSIN, TURKEY (TRMER)\n6. CONTAINER COUNT ........ 11 x 40GP\n"
+                "7. TOTAL GROSS WEIGHT ........... 199457 kg\nDESCRIPTION: MULTIPURPOSE PAPER A4")
+        f = FieldExtractor().extract(att("y_SI.txt", "SI", text))
+        self.assertEqual((f.shipper, f.consignee, f.notify_party), ("PACIFIC OFFICE SUPPLIES PTE LTD", "MERIDIAN PAPER TRADING SDN BHD", "MERIDIAN PAPER TRADING SDN BHD"))
+        self.assertEqual((f.port_of_loading, f.port_of_discharge), ("MOMBASA, KENYA (KEMBA)", "MERSIN, TURKEY (TRMER)"))
+        self.assertEqual((f.container_count, f.gross_weight_kg), (11, 199457.0))
+
 if __name__ == "__main__":
     unittest.main()
