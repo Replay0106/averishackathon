@@ -10,6 +10,7 @@ Provides enterprise zero-trust defense for operational shipping inboxes:
 
 import re
 import hashlib
+import threading
 import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
@@ -123,6 +124,7 @@ class TamperEvidentAuditLedger:
     def __init__(self, ledger_file: str = "audit_ledger.json"):
         self.ledger_file = ledger_file
         self.blocks: List[Dict[str, Any]] = []
+        self._lock = threading.RLock()
         self._load()
 
     def _load(self):
@@ -144,11 +146,9 @@ class TamperEvidentAuditLedger:
             self._save()
 
     def _save(self):
-        try:
-            with open(self.ledger_file, "w", encoding="utf-8") as f:
-                json.dump(self.blocks, f, indent=2)
-        except Exception:
-            pass
+        # A failed write must surface: an audit entry that silently was not saved is worse than an error.
+        with open(self.ledger_file, "w", encoding="utf-8") as f:
+            json.dump(self.blocks, f, indent=2)
 
     def record_action(
         self,
@@ -160,27 +160,32 @@ class TamperEvidentAuditLedger:
         """
         Appends an auditable event cryptographically linked to the previous block.
         """
-        prev_block = self.blocks[-1]
-        prev_hash = prev_block["block_hash"]
-        index = len(self.blocks)
-        timestamp = datetime.utcnow().isoformat() + "Z"
-        
-        payload_str = f"{index}:{timestamp}:{actor}:{email_id}:{action}:{json.dumps(details, sort_keys=True)}:{prev_hash}"
-        block_hash = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
-        
-        block = {
-            "index": index,
-            "timestamp": timestamp,
-            "actor": actor,
-            "email_id": email_id,
-            "action": action,
-            "details": details,
-            "previous_hash": prev_hash,
-            "block_hash": block_hash
-        }
-        self.blocks.append(block)
-        self._save()
-        return block
+        with self._lock:
+            prev_block = self.blocks[-1]
+            prev_hash = prev_block["block_hash"]
+            index = len(self.blocks)
+            timestamp = datetime.utcnow().isoformat() + "Z"
+
+            payload_str = f"{index}:{timestamp}:{actor}:{email_id}:{action}:{json.dumps(details, sort_keys=True)}:{prev_hash}"
+            block_hash = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+
+            block = {
+                "index": index,
+                "timestamp": timestamp,
+                "actor": actor,
+                "email_id": email_id,
+                "action": action,
+                "details": details,
+                "previous_hash": prev_hash,
+                "block_hash": block_hash
+            }
+            self.blocks.append(block)
+            try:
+                self._save()
+            except Exception:
+                self.blocks.pop()
+                raise
+            return block
 
     def verify_integrity(self) -> Tuple[bool, Optional[str]]:
         """

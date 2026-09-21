@@ -199,7 +199,7 @@ export default function Compliance({ go, id }: { go: (p: Page, id?: string) => v
           {done && !clear && d?.status === 'MISMATCH' && (
             <div className="flex items-center justify-between bg-warn/[0.05] px-5 py-3.5">
               <span className="text-xs text-amber-200">Resolve the discrepancy before release.</span>
-              <Button size="sm" variant="primary" onClick={() => go('carrier', d.id)}>Prepare amendment</Button>
+              <Button size="sm" variant="primary" onClick={() => go('cases', d.id)}>Open case</Button>
             </div>
           )}
           {done && !clear && d?.status !== 'MISMATCH' && checks.some((c) => c.name === 'Sender Security (Trust Gateway)' && !c.pass) && (

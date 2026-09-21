@@ -23,6 +23,19 @@ export interface CompareRow {
 export interface Meta { booking: string | null; vessel: string | null; oc_no: string | null; carrier: string }
 export interface Resolution { action: string; at: string; block?: number; [k: string]: unknown }
 
+export interface Amendment {
+  status: 'sent' | 'confirmed'
+  at: string
+  recipient: string
+  subject: string
+  block: number | null
+  auto: boolean
+  body?: string
+  reason?: string
+  fields?: { key: string; label: string; si: string | number | null; bl: string | number | null }[]
+}
+export interface CaseInfo { decision: string; reason: string; can_send?: boolean; block_reason?: string | null }
+
 export interface EmailRow {
   id: string
   shipment: string
@@ -36,6 +49,8 @@ export interface EmailRow {
   attachments: string[]
   meta: Meta
   resolution?: Resolution | null
+  amendment?: Amendment | null
+  case?: CaseInfo | null
 }
 export interface EmailDetail extends EmailRow {
   body: string

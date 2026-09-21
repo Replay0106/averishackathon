@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AuditBlock, CopilotReply, EmailDetail, EmailRow, Resolution, Summary } from './types'
+import type { Amendment, AuditBlock, CopilotReply, EmailDetail, EmailRow, Resolution, Summary } from './types'
 import { clock } from './utils'
 
 type Snapshot = { emails: EmailRow[]; summary: Summary; details: Record<string, EmailDetail> }
@@ -56,6 +56,7 @@ interface Ctx {
   dismissToast: (id: number) => void
   getDetail: (id: string) => Promise<EmailDetail | null>
   act: (id: string, action: string, details?: Record<string, unknown>) => Promise<void>
+  sendAmendment: (id: string) => Promise<{ ok: boolean; error?: string; recipient?: string }>
   ask: (q: string) => Promise<CopilotReply>
   refreshAudit: () => Promise<void>
 }
@@ -198,6 +199,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [emails, pushFeed, refreshAudit, withDs],
   )
 
+  // A reviewer sends the amendment (or the request for missing documents) for a case that was held for a person.
+  const sendAmendment = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(withDs(`/api/emails/${id}/send-amendment`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ actor: 'Operations Desk' }),
+        })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok) return { ok: false, error: typeof j.detail === 'string' ? j.detail : 'The amendment could not be sent.' }
+        const am = j.amendment as Amendment
+        const rs = j.resolution as Resolution
+        delete details.current[id]
+        setEmails((list) => list.map((e) => (e.id === id ? { ...e, amendment: { ...am, body: undefined, fields: undefined }, resolution: rs } : e)))
+        setRes((r) => ({ ...r, [id]: rs }))
+        await refreshAudit()
+        const row = emails.find((e) => e.id === id)
+        pushFeed(`amendment sent to ${am.recipient} — ${row?.shipment ?? id}`, 'ok')
+        return { ok: true, recipient: am.recipient }
+      } catch {
+        return { ok: false, error: 'The server did not respond.' }
+      }
+    },
+    [emails, pushFeed, refreshAudit, withDs],
+  )
+
   const ask = useCallback(
     async (q: string): Promise<CopilotReply> => {
       const r = await api<CopilotReply>(withDs(`/api/copilot?q=${encodeURIComponent(q)}`))
@@ -210,7 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (d.status === 'NEEDS_REVIEW') return { kind: 'review', shipment: row.shipment, email: row.id, reason: d.review_reason ?? '', confidence: d.confidence, recommendation: 'Escalate to a human reviewer.' }
       const bad = d.comparison.filter((c) => !c.match && !c.missing)
       if (!bad.length) return { kind: 'clear', shipment: row.shipment, email: row.id, message: 'No mismatch detected. All seven fields match between SI and draft BL.' }
-      return { kind: 'mismatch', shipment: row.shipment, email: row.id, issues: bad, evidence: d.attachments, recommendation: 'Request corrected draft BL from carrier.' }
+      return { kind: 'mismatch', shipment: row.shipment, email: row.id, issues: bad, evidence: d.attachments, recommendation: 'Request a corrected draft BL from the sender.' }
     },
     [emails, getDetail, withDs],
   )
@@ -263,8 +291,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const value = useMemo(
-    () => ({ ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit }),
-    [ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit],
+    () => ({ ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, sendAmendment, ask, refreshAudit }),
+    [ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, sendAmendment, ask, refreshAudit],
   )
   return <C.Provider value={value}>{children}</C.Provider>
 }

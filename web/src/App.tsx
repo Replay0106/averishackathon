@@ -10,9 +10,8 @@ import { ImportModal } from './components/ImportFolder'
 import Overview from './pages/Overview'
 import Inbox from './pages/Inbox'
 import Verification from './pages/Verification'
-import Discrepancies from './pages/Discrepancies'
+import Cases from './pages/Cases'
 import Compliance from './pages/Compliance'
-import Carrier from './pages/Carrier'
 import Analytics from './pages/Analytics'
 import Audit from './pages/Audit'
 import Gateway from './pages/Gateway'
@@ -57,9 +56,8 @@ export default function App() {
       case 'overview': return <Overview go={go} />
       case 'inbox': return <Inbox go={go} initialId={route.id} />
       case 'verification': return <Verification go={go} id={route.id} auto={route.auto} />
-      case 'discrepancies': return <Discrepancies go={go} />
+      case 'cases': return <Cases go={go} id={route.id} />
       case 'compliance': return <Compliance go={go} id={route.id} />
-      case 'carrier': return <Carrier go={go} id={route.id} />
       case 'analytics': return <Analytics />
       case 'audit': return <Audit />
       case 'gateway': return <Gateway go={go} />

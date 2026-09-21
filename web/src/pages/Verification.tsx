@@ -327,14 +327,14 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
                       {d.status === 'OK' ? <ShieldCheck className="size-4" /> : <AlertTriangle className="size-4" />}
                     </div>
                     <div className="text-[13.5px] font-medium leading-snug">
-                      {d.status === 'OK' ? 'Release to compliance gate' : d.status === 'MISMATCH' ? 'Request corrected draft BL from carrier' : 'Route to Human Review Queue'}
+                      {d.status === 'OK' ? 'Release to compliance gate' : d.status === 'MISMATCH' ? 'Amendment request to the sender' : 'Route to Human Review Queue'}
                     </div>
                   </div>
                   <div className="num mb-4 text-[11px] text-ink3">Confidence {Math.round(d.confidence * 100)}%</div>
                   <div className="flex flex-wrap gap-2">
-                    {d.status === 'MISMATCH' && <Button variant="primary" icon={<ArrowRight className="size-3.5" />} onClick={() => go('carrier', d.id)}>Prepare amendment</Button>}
+                    {d.status === 'MISMATCH' && <Button variant="primary" icon={<ArrowRight className="size-3.5" />} onClick={() => go('cases', d.id)}>Open case</Button>}
                     {d.status === 'OK' && <Button variant="primary" icon={<ArrowRight className="size-3.5" />} onClick={() => go('compliance', d.id)}>Open compliance gate</Button>}
-                    {d.status === 'NEEDS_REVIEW' && <Button variant="primary" icon={<ArrowRight className="size-3.5" />} onClick={() => go('discrepancies')}>Open review queue</Button>}
+                    {d.status === 'NEEDS_REVIEW' && <Button variant="primary" icon={<ArrowRight className="size-3.5" />} onClick={() => go('cases', d.id)}>Open case</Button>}
                     <Button onClick={() => setTab('redline')}>View redline</Button>
                   </div>
                 </div>

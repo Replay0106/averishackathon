@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 
 export type Page =
-  | 'overview' | 'inbox' | 'verification' | 'discrepancies' | 'compliance'
-  | 'carrier' | 'analytics' | 'audit' | 'gateway' | 'copilot' | 'settings' | 'roadmap'
+  | 'overview' | 'inbox' | 'verification' | 'cases' | 'compliance'
+  | 'analytics' | 'audit' | 'gateway' | 'copilot' | 'settings' | 'roadmap'
 
 export interface Route { page: Page; id?: string; auto?: boolean }
 
-const PAGES: Page[] = ['overview', 'inbox', 'verification', 'discrepancies', 'compliance', 'carrier', 'analytics', 'audit', 'gateway', 'copilot', 'settings', 'roadmap']
+const PAGES: Page[] = ['overview', 'inbox', 'verification', 'cases', 'compliance', 'analytics', 'audit', 'gateway', 'copilot', 'settings', 'roadmap']
 
 function parse(): Route {
   const [, p, id, flag] = window.location.hash.split('/')
-  const page = (PAGES as string[]).includes(p) ? (p as Page) : 'overview'
+  // The old Discrepancy Queue and Carrier Actions pages were merged into Cases; keep their links working.
+  const page = p === 'discrepancies' || p === 'carrier' ? 'cases' : (PAGES as string[]).includes(p) ? (p as Page) : 'overview'
   return { page, id: id || undefined, auto: flag === 'auto' }
 }
 
