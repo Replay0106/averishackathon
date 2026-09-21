@@ -5,7 +5,7 @@ Classifies incoming shipping operations emails into 5 distinct categories:
   - BL_COMPARISON: Requests to check/compare draft B/L against Shipping Instruction (SI).
   - SI_REQUEST: Requests to prepare, submit, or issue a new Shipping Instruction.
   - INVOICE_QUERY: Questions regarding billing, charges, debit/credit notes, invoice cancellation.
-  - GENERAL: General shipping status, vessel schedules, berthing reports, draft BL sending requests.
+  - GENERAL: General shipping status, vessel schedules, berthing reports, operational notices.
   - SPAM: Unsolicited sales, marketing promotions, phishing, irrelevant messages.
 
 Supports high-speed deterministic regex pre-classification and batched Gemini Flash LLM refinement.
@@ -20,6 +20,14 @@ try:
     from google import genai
 except ImportError:
     genai = None
+
+
+DRAFT_REQUEST = re.compile(r"\b(?:send|provide|share|forward|issue)\b[^.\n]{0,25}\bdraft\s+b/?l\b", re.IGNORECASE)
+
+
+def is_draft_request(email: Dict[str, Any]) -> bool:
+    """True when the email asks for a draft BL to be sent for checking, with no documents attached."""
+    return not email.get("attachments") and bool(DRAFT_REQUEST.search(email.get("body", "")))
 
 
 class EmailClassifier:
@@ -55,13 +63,20 @@ class EmailClassifier:
         ):
             return "BL_COMPARISON"
 
+        # 2b. Requests to send the draft BL for checking (document-check request, nothing attached yet)
+        if is_draft_request(email):
+            return "BL_COMPARISON"
+
         # 3. SPAM patterns
         spam_triggers = [
             "increase your shipping revenue", "one weird", "storage limit",
             "limited time offer", "automation tool", "verify your account",
             "casino", "crypto", "bitcoin", "winner", "prize", "unsubscribe",
             "grow your business", "exclusive deal", "special discount",
-            "congratulations", "marketing partner"
+            "congratulations", "marketing partner",
+            "unpaid customs fee", "customs fee", "undelivered messages", "bank officer",
+            "business proposal", "confirm your bank details", "update your account to avoid",
+            "email storage is full", "mailbox is full", "usd 4.5 million"
         ]
         if any(t in subject for t in spam_triggers) or any(t in body for t in spam_triggers):
             return "SPAM"

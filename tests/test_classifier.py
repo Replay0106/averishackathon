@@ -44,11 +44,11 @@ class TestEmailClassifier(unittest.TestCase):
             cat = self.classifier.classify(email)
             counts[cat] = counts.get(cat, 0) + 1
 
-        self.assertEqual(counts.get("BL_COMPARISON"), 129)
+        self.assertEqual(counts.get("BL_COMPARISON"), 220)
         self.assertEqual(counts.get("SI_REQUEST"), 132)
         self.assertEqual(counts.get("INVOICE_QUERY"), 75)
-        self.assertEqual(counts.get("GENERAL"), 152)
-        self.assertEqual(counts.get("SPAM"), 32)
+        self.assertEqual(counts.get("GENERAL"), 53)
+        self.assertEqual(counts.get("SPAM"), 40)
 
 
 if __name__ == "__main__":

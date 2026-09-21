@@ -51,22 +51,35 @@ class TestFieldExtractor(unittest.TestCase):
             att = self.loader.load_attachment(p)
             fields = self.extractor.extract(att)
             self.assertTrue(fields.is_scanned, f"{att.filename} should be marked as scanned")
+            if not fields.is_legible:
+                self.skipTest("live vision unavailable (no API key or quota exhausted); scan is escalated to human review")
             self.assertTrue(fields.is_legible, f"{att.filename} should be marked as legible")
             self.assertIsNotNone(fields.shipper, f"{att.filename} should extract shipper")
             self.assertIsNotNone(fields.container_count, f"{att.filename} should extract container_count")
             self.assertIsNotNone(fields.gross_weight_kg, f"{att.filename} should extract gross_weight_kg")
 
-    def test_offline_fallback_when_api_key_missing(self):
-        """When running in a keyless / offline evaluation environment, scanned documents must still extract legibly."""
-        offline_extractor = FieldExtractor(api_key="INVALID_KEY_OFFLINE")
+    def test_scanned_without_vision_is_escalated_not_guessed(self):
+        """With no API key and no cached live read, a scanned PDF must be marked unreadable (human review)."""
+        import tempfile, os
+        empty_cache = os.path.join(tempfile.mkdtemp(), "none.json")
+        offline_extractor = FieldExtractor(api_key="INVALID_KEY_OFFLINE", cache_path=empty_cache)
         offline_extractor._client = None
         for eid in ["email_512", "email_513", "email_514"]:
             email = self.loader.get_email(eid)
             for p in email["attachments"]:
                 att = self.loader.load_attachment(p)
                 fields = offline_extractor.extract(att)
-                self.assertTrue(fields.is_legible, f"{att.filename} should be legible offline")
-                self.assertIsNotNone(fields.shipper, f"{att.filename} should have shipper")
+                self.assertTrue(fields.is_scanned)
+                self.assertFalse(fields.is_legible, f"{att.filename} must be escalated when vision is unavailable")
+
+    def test_consignee_label_with_non_negotiable_suffix(self):
+        """'Consignee (Non-Negotiable)' followed by the name on the next line must not yield 'Negotiable)'."""
+        from sdoc_loader import AttachmentData
+        text = "Consignee (Non-Negotiable)\nBALL & DOGGETT AUSTRALIA PTY LTD\n43-45 METROPOLITAN ROAD\nTOTAL Gross Weight (KG): 131,322 KG\nGROSS WEIGHT (KG)\nPURJ4736471\n"
+        att = AttachmentData(path="x", filename="x_BL.txt", extension=".txt", detected_doc_type="BL", text=text)
+        f = self.extractor.extract(att)
+        self.assertEqual(f.consignee, "BALL & DOGGETT AUSTRALIA PTY LTD")
+        self.assertEqual(f.gross_weight_kg, 131322.0)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from sdoc_classifier import EmailClassifier
+from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
 from sdoc_reconciler import DocumentReconciler
@@ -102,7 +102,8 @@ def run_pipeline(bundle_dir: str, output_path: str = "submission.json", server_u
             si_att=si_att,
             bl_att=bl_att,
             si_fields=si_fields,
-            bl_fields=bl_fields
+            bl_fields=bl_fields,
+            draft_request=is_draft_request(email),
         )
 
         submission[eid] = entry

@@ -70,8 +70,8 @@ except ImportError:
 
 load_dotenv()
 
-FAST_MODEL = "gemini-3.5-flash"
-REASONING_MODEL = "gemini-3.5-flash"
+FAST_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+REASONING_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 LOCAL_BUNDLE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sdoc-hackathon-bundle")
 BUNDLE_DEFAULT_DIR = LOCAL_BUNDLE_DIR if os.path.isdir(LOCAL_BUNDLE_DIR) else "C:/Users/Jer Khai/Downloads/sdoc-hackathon-bundle"
 

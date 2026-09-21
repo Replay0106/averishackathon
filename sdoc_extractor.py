@@ -16,12 +16,14 @@ Supports:
   - Native Gemini Flash Multimodal PDF Vision for scanned/image-only PDFs
 """
 
+import hashlib
 import io
 import json
 import os
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
@@ -67,10 +69,52 @@ class ExtractedDocFields:
 
 
 class FieldExtractor:
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-3.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None, cache_path: Optional[str] = None):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        self.model = model
+        self.model = model or os.environ.get("GEMINI_MODEL") or "gemini-3.6-flash"
         self._client = None
+        default_cache = Path(__file__).resolve().parent / ".cache" / "vision_cache.json"
+        self.cache_path = Path(cache_path) if cache_path else default_cache
+
+    def _cache_get(self, key: str) -> Optional[Dict[str, Any]]:
+        try:
+            return json.loads(self.cache_path.read_text(encoding="utf-8")).get(key)
+        except Exception:
+            return None
+
+    def _cache_put(self, key: str, data: Dict[str, Any]) -> None:
+        try:
+            try:
+                store = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            except Exception:
+                store = {}
+            store[key] = data
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_text(json.dumps(store), encoding="utf-8")
+        except Exception:
+            pass
+
+    @staticmethod
+    def _from_vision(data: Dict[str, Any], att: AttachmentData) -> ExtractedDocFields:
+        wt = data.get("gross_weight_kg")
+        res = ExtractedDocFields(
+            doc_type=data.get("doc_type", att.detected_doc_type),
+            shipper=data.get("shipper"),
+            consignee=data.get("consignee"),
+            notify_party=data.get("notify_party"),
+            port_of_loading=data.get("port_of_loading"),
+            port_of_discharge=data.get("port_of_discharge"),
+            container_count=data.get("container_count"),
+            gross_weight_kg=float(wt) if wt is not None else None,
+            is_scanned=True,
+            is_legible=bool(data.get("is_legible", True)),
+            has_missing_placeholder=bool(data.get("has_missing_placeholder", False)),
+            missing_field_name=data.get("missing_field_name"),
+        )
+        seven = (res.shipper, res.consignee, res.notify_party, res.port_of_loading, res.port_of_discharge, res.container_count, res.gross_weight_kg)
+        if all(v is None for v in seven):
+            res.is_legible = False  # vision returned nothing usable: escalate, do not guess
+        return res
 
     @property
     def client(self):
@@ -112,7 +156,7 @@ class FieldExtractor:
             return first_line
 
         # 2. Fallback to dash/pipe separated
-        m_sep = re.search(r"(?:^|\n)\s*(?:" + pattern + r")[^\n:]*[\-|]\s*([^\n;]+)", text, re.IGNORECASE)
+        m_sep = re.search(r"(?:^|\n)\s*(?:" + pattern + r")[^\n:]*(?:\s[\-\u2013]\s|\s*\|\s*)([^\n;]+)", text, re.IGNORECASE)
         if m_sep:
             return m_sep.group(1).strip()
 
@@ -125,11 +169,16 @@ class FieldExtractor:
             return "N/A"
         return None
 
-    def _record_evidence(self, fields: ExtractedDocFields, field_name: str, val: Any, pattern: str, text: str):
+    def _record_evidence(self, fields: ExtractedDocFields, field_name: str, val: Any, pattern: str, text: str, hint: Optional[str] = None):
         lines = text.split("\n")
         snippet = ""
         line_no = 1
-        for idx, l in enumerate(lines):
+        if hint:
+            for idx, l in enumerate(lines):
+                if hint in l and re.search(pattern, l, re.IGNORECASE):
+                    snippet, line_no = l.strip(), idx + 1
+                    break
+        for idx, l in enumerate([] if snippet else lines):
             if re.search(pattern, l, re.IGNORECASE):
                 snippet = l.strip()
                 line_no = idx + 1
@@ -224,7 +273,7 @@ class FieldExtractor:
                     fields.missing_field_name = "container_count"
 
         # 7. Gross Weight
-        raw_val = self._find_field(r"Total Gross Weight|Gross Weight|Gross Wt|GROSS WT|GROSS WEIGHT", text)
+        raw_val = self._find_field(r"(?:Total\s+)?Gross\s+(?:Weight|Wt)", text)
         if raw_val:
             raw_w = raw_val.strip()
             if self._is_placeholder(raw_w):
@@ -234,66 +283,22 @@ class FieldExtractor:
                 parsed_wt = self._parse_weight(raw_w)
                 if parsed_wt is not None:
                     fields.gross_weight_kg = parsed_wt
-                    self._record_evidence(fields, "gross_weight_kg", parsed_wt, r"Gross Weight|Gross Wt|GROSS WT", text)
+                    self._record_evidence(fields, "gross_weight_kg", parsed_wt, r"Gross\s+(?:Weight|Wt)", text, hint=raw_w)
                 else:
                     fields.has_missing_placeholder = True
                     fields.missing_field_name = "gross_weight_kg"
 
         return fields
 
-    FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.7-flash", "gemini-3.8-flash", "gemini-3.6-flash"]
-
-    # Ground-truth verified offline fallback cache for scanned documents in case evaluator environment lacks GEMINI_API_KEY
-    OFFLINE_SCANNED_CACHE = {
-        "email_512_SI.pdf": {
-            "doc_type": "SI", "shipper": "APRIL FAR EAST (M) SDN BHD", "consignee": "AL GURG STATIONERY LLC",
-            "notify_party": "AL GURG STATIONERY LLC", "port_of_loading": "NHAVA SHEVA, INDIA",
-            "port_of_discharge": "TUTICORIN, INDIA", "container_count": 6, "gross_weight_kg": 128544.0, "is_legible": True
-        },
-        "email_512_BL.pdf": {
-            "doc_type": "BL", "shipper": "APRIL FAR EAST (M) SDN BHD", "consignee": "AL GURG STATIONERY LLC",
-            "notify_party": "AL GURG STATIONERY LLC", "port_of_loading": "NHAVA SHEVA, INDIA",
-            "port_of_discharge": "TUTICORIN, INDIA", "container_count": 6, "gross_weight_kg": 128544.0, "is_legible": True
-        },
-        "email_513_SI.pdf": {
-            "doc_type": "SI", "shipper": "APRIL FINE PAPER TRADING", "consignee": "KPP-ANTALIS (SINGAPORE) PTE. LTD.",
-            "notify_party": "EAST BRIGHT FZ-LLC", "port_of_loading": "NHAVA SHEVA, INDIA",
-            "port_of_discharge": "VALPARAISO, CHILE", "container_count": 10, "gross_weight_kg": 237750.0, "is_legible": True
-        },
-        "email_513_BL.pdf": {
-            "doc_type": "BL", "shipper": "APRIL FINE PAPER TRADING", "consignee": "KPP-ANTALIS (SINGAPORE) PTE. LTD.",
-            "notify_party": "EAST BRIGHT FZ-LLC", "port_of_loading": "NHAVA SHEVA INDIA",
-            "port_of_discharge": "VALPARAISO, CHILE", "container_count": 10, "gross_weight_kg": 237750.0, "is_legible": True
-        },
-        "email_514_SI.pdf": {
-            "doc_type": "SI", "shipper": "ASIA PACIFIC PAPERBOARD TRADING PTE LTD", "consignee": "EAST BRIGHT FZ-LLC",
-            "notify_party": "EAST BRIGHT FZ-LLC", "port_of_loading": "NANTONG, CHINA",
-            "port_of_discharge": "GDANSK, POLAND", "container_count": 1, "gross_weight_kg": 22825.0, "is_legible": True
-        },
-        "email_514_BL.pdf": {
-            "doc_type": "BL", "shipper": "ASIA PACIFIC PAPERBOARD TRADING PTE LTD", "consignee": "EAST BRIGHT FZ-LLC",
-            "notify_party": "EAST BRIGHT FZ-LLC", "port_of_loading": "NANTONG, CHINA",
-            "port_of_discharge": "GDANSK, POLAND", "container_count": 1, "gross_weight_kg": 22825.0, "is_legible": True
-        },
-    }
+    FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.7-flash"]
 
     def _extract_via_vision(self, att: AttachmentData, force_live: bool = False) -> ExtractedDocFields:
-        # 1. Fast cache check (ground-truth verified Gemini vision extractions)
-        if not force_live and att.filename in self.OFFLINE_SCANNED_CACHE:
-            c = self.OFFLINE_SCANNED_CACHE[att.filename]
-            return ExtractedDocFields(
-                doc_type=c.get("doc_type", att.detected_doc_type),
-                shipper=c.get("shipper"),
-                consignee=c.get("consignee"),
-                notify_party=c.get("notify_party"),
-                port_of_loading=c.get("port_of_loading"),
-                port_of_discharge=c.get("port_of_discharge"),
-                container_count=c.get("container_count"),
-                gross_weight_kg=c.get("gross_weight_kg"),
-                is_scanned=True,
-                is_legible=True,
-                has_missing_placeholder=False
-            )
+        # 1. Reuse a previous live vision read of the identical file (content hash), never a hard-coded answer
+        cache_key = hashlib.sha256(att.raw_bytes or b"").hexdigest()
+        if not force_live:
+            hit = self._cache_get(cache_key)
+            if hit:
+                return self._from_vision(hit, att)
 
         # 2. Extract embedded PNG image from PDF if available
         image_bytes = None
@@ -352,45 +357,21 @@ Return ONLY a JSON object:
                             config={"response_mime_type": "application/json"}
                         )
                         data = json.loads(resp.text)
-                        return ExtractedDocFields(
-                            doc_type=data.get("doc_type", att.detected_doc_type),
-                            shipper=data.get("shipper"),
-                            consignee=data.get("consignee"),
-                            notify_party=data.get("notify_party"),
-                            port_of_loading=data.get("port_of_loading"),
-                            port_of_discharge=data.get("port_of_discharge"),
-                            container_count=data.get("container_count"),
-                            gross_weight_kg=float(data["gross_weight_kg"]) if data.get("gross_weight_kg") is not None else None,
-                            is_scanned=True,
-                            is_legible=data.get("is_legible", True),
-                            has_missing_placeholder=data.get("has_missing_placeholder", False),
-                            missing_field_name=data.get("missing_field_name")
-                        )
+                        result = self._from_vision(data, att)
+                        if result.is_legible:
+                            self._cache_put(cache_key, data)
+                        return result
                     except Exception as e:
                         err_str = str(e)
+                        if "PerDay" in err_str:
+                            # per-model daily quota: retrying this model is pointless, try the next one
+                            break
                         if "429" in err_str or "503" in err_str:
                             time.sleep(1.5)
                             continue
                         break
 
-        # 3. Fallback: Check offline cache for known scanned benchmark documents
-        if att.filename in self.OFFLINE_SCANNED_CACHE:
-            c = self.OFFLINE_SCANNED_CACHE[att.filename]
-            return ExtractedDocFields(
-                doc_type=c.get("doc_type", att.detected_doc_type),
-                shipper=c.get("shipper"),
-                consignee=c.get("consignee"),
-                notify_party=c.get("notify_party"),
-                port_of_loading=c.get("port_of_loading"),
-                port_of_discharge=c.get("port_of_discharge"),
-                container_count=c.get("container_count"),
-                gross_weight_kg=c.get("gross_weight_kg"),
-                is_scanned=True,
-                is_legible=True,
-                has_missing_placeholder=False
-            )
-
-        # 4. Default if neither online vision nor cache is available
+        # 3. Vision unavailable or failed: mark unreadable so the case goes to human review
         return ExtractedDocFields(
             doc_type=att.detected_doc_type,
             is_scanned=True,

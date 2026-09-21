@@ -57,7 +57,7 @@ class InboxLoader:
         self.attachments_dir = self.bundle_dir / "attachments"
 
     def get_email_ids(self) -> List[str]:
-        files = sorted(self.inbox_dir.glob("email_*.json"))
+        files = sorted(self.inbox_dir.glob("*.json"))
         return [f.stem for f in files]
 
     def load_emails(self) -> List[Dict[str, Any]]:

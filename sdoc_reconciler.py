@@ -96,6 +96,7 @@ class DocumentReconciler:
         bl_att: Optional[AttachmentData] = None,
         si_fields: Optional[ExtractedDocFields] = None,
         bl_fields: Optional[ExtractedDocFields] = None,
+        draft_request: bool = False,
     ) -> Dict[str, Any]:
         """Reconciles an email case and returns the submission entry."""
         # Convenience: support reconcile(si_fields, bl_fields)
@@ -113,6 +114,16 @@ class DocumentReconciler:
         if category != "BL_COMPARISON":
             return {
                 "category": category,
+                "status": "OK",
+                "review_reason": None,
+                "has_defect": False,
+                "defect_fields": []
+            }
+
+        # 1b. Request to send the draft BL: nothing to compare yet, and nothing is missing
+        if draft_request and si_att is None and bl_att is None:
+            return {
+                "category": "BL_COMPARISON",
                 "status": "OK",
                 "review_reason": None,
                 "has_defect": False,

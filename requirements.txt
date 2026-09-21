@@ -6,3 +6,6 @@ pydantic
 reportlab
 openpyxl
 python-docx
+fastapi
+uvicorn
+python-multipart

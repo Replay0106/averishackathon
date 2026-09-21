@@ -1,0 +1,94 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
+
+  --color-canvas: #0b1120;
+  --color-card: #0f172a;
+  --color-sub: #1e293b;
+  --color-edge: #334155;
+  --color-ink: #f8fafc;
+  --color-ink2: #94a3b8;
+  --color-ink3: #64748b;
+  --color-brand: #f37021;
+  --color-brand-deep: #ee5d24;
+  --color-sky: #38bdf8;
+  --color-ok: #10b981;
+  --color-warn: #f59e0b;
+  --color-bad: #ef4444;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  * { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+  ::selection { background: rgba(56, 189, 248, 0.28); }
+  :focus-visible { outline: 2px solid var(--color-brand-deep); outline-offset: 2px; border-radius: 6px; }
+  button { cursor: pointer; }
+}
+
+@layer components {
+  .panel {
+    background: var(--color-card);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  .panel-glass {
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(14px);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 24px 48px -24px rgba(0, 0, 0, 0.6);
+  }
+  .bezel {
+    background: var(--color-card);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 14px;
+    padding: 2px;
+  }
+  .bezel > .core {
+    background: var(--color-sub);
+    border-radius: 12px;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06);
+  }
+  .eyebrow {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--color-ink3);
+  }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .grid-bg {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+}
+
+@keyframes breathe { 0%, 100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.35); } }
+@keyframes ring-pulse { 0% { transform: scale(0.9); opacity: 0.5; } 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -24; } }
+.breathe { animation: breathe 2.6s ease-in-out infinite; }
+.ring-pulse { animation: ring-pulse 2.4s ease-out infinite; }
+.caret::after { content: ""; display: inline-block; width: 6px; height: 1em; margin-left: 2px; background: var(--color-sky); vertical-align: -2px; animation: caret 1s steps(1) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
