@@ -8,13 +8,23 @@ export interface FeedEvent { id: number; time: string; text: string; tone: 'ok' 
 export interface DatasetInfo {
   id: string
   name: string
-  kind: 'demo' | 'import'
+  kind: 'demo' | 'import' | 'gmail'
   created: string
   emails: number
   job: { status: 'ready' | 'processing'; done: number; total: number; failed: { id: string; error: string }[] }
   report: { emails?: number; bundle_emails?: number; eml_emails?: number; attachments?: number; skipped?: string[] }
 }
 export interface PickedFile { file: File; path: string }
+export interface GmailStatus {
+  configured: boolean
+  configuration_error: string | null
+  connected: boolean
+  email: string | null
+  label: string
+  last_sync_at: string | null
+  csrf_token: string | null
+  dataset_id: string | null
+}
 
 let snapshotPromise: Promise<Snapshot> | null = null
 const loadSnapshot = () => (snapshotPromise ??= import('../data/snapshot.json').then((m) => m.default as unknown as Snapshot))
@@ -23,7 +33,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
     const ctl = new AbortController()
     const t = setTimeout(() => ctl.abort(), 6000)
-    const res = await fetch(path, { ...init, signal: ctl.signal })
+    const res = await fetch(path, { credentials: 'same-origin', ...init, signal: ctl.signal })
     clearTimeout(t)
     if (!res.ok) return null
     return (await res.json()) as T
@@ -46,6 +56,11 @@ interface Ctx {
   switchDataset: (id: string) => void
   importFolder: (files: PickedFile[], name: string, onProgress: (done: number, total: number) => void) => Promise<DatasetInfo>
   deleteDataset: (id: string) => Promise<void>
+  gmail: GmailStatus | null
+  connectGmail: () => void
+  syncGmail: () => Promise<DatasetInfo>
+  disconnectGmail: () => Promise<void>
+  refreshGmail: () => Promise<GmailStatus | null>
   emails: EmailRow[]
   summary: Summary | null
   resolutions: Record<string, Resolution>
@@ -71,6 +86,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [live, setLive] = useState(false)
   const [dataset, setDataset] = useState('demo')
   const [datasets, setDatasets] = useState<DatasetInfo[]>([DEMO])
+  const [gmailStatus, setGmailStatus] = useState<GmailStatus | null>(null)
   const [emails, setEmails] = useState<EmailRow[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [resolutions, setRes] = useState<Record<string, Resolution>>({})
@@ -95,6 +111,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return r
   }, [])
 
+  const refreshGmail = useCallback(async () => {
+    const status = await api<GmailStatus>('/api/gmail/status')
+    setGmailStatus(status)
+    return status
+  }, [])
+
   useEffect(() => {
     let alive = true
     setLoading(true)
@@ -116,7 +138,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setRes({})
       }
       if (!ready) {
-        await Promise.all([refreshAudit(), refreshDatasets()])
+        await Promise.all([refreshAudit(), refreshDatasets(), refreshGmail()])
       }
       setReady(true)
       setLoading(false)
@@ -179,7 +201,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const at = new Date().toISOString()
       const res = await api<{ block: AuditBlock }>(withDs(`/api/emails/${id}/action`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(dataset.startsWith('gmail_') && gmailStatus?.csrf_token ? { 'X-CSRF-Token': gmailStatus.csrf_token } : {}),
+        },
         body: JSON.stringify({ actor: 'Operations Desk', action, details: det }),
       })
       let block = res?.block
@@ -195,7 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const row = emails.find((e) => e.id === id)
       pushFeed(`${action.replace(/_/g, ' ').toLowerCase()} — ${row?.shipment ?? id}`, 'ok')
     },
-    [emails, pushFeed, refreshAudit, withDs],
+    [dataset, emails, gmailStatus?.csrf_token, pushFeed, refreshAudit, withDs],
   )
 
   const ask = useCallback(
@@ -262,9 +287,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [dataset, refreshDatasets, switchDataset],
   )
 
+  const connectGmail = useCallback(() => {
+    window.location.assign('/api/gmail/connect')
+  }, [])
+
+  const syncGmail = useCallback(async () => {
+    if (!gmailStatus?.csrf_token) throw new Error('Connect Gmail before syncing')
+    const res = await fetch('/api/gmail/sync', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': gmailStatus.csrf_token },
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail ?? `Gmail sync failed (${res.status})`)
+    }
+    let info = (await res.json()) as DatasetInfo
+    while (info.job.status === 'processing') {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      const next = await api<DatasetInfo>(`/api/datasets/${info.id}`)
+      if (!next) throw new Error('Lost connection while processing Gmail messages')
+      info = next
+    }
+    await Promise.all([refreshDatasets(), refreshGmail()])
+    switchDataset(info.id)
+    return info
+  }, [gmailStatus?.csrf_token, refreshDatasets, refreshGmail, switchDataset])
+
+  const disconnectGmail = useCallback(async () => {
+    if (!gmailStatus?.csrf_token) return
+    const res = await fetch('/api/gmail/disconnect', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRF-Token': gmailStatus.csrf_token },
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail ?? `Could not disconnect Gmail (${res.status})`)
+    }
+    if (dataset.startsWith('gmail_')) switchDataset('demo')
+    await Promise.all([refreshDatasets(), refreshGmail()])
+  }, [dataset, gmailStatus?.csrf_token, refreshDatasets, refreshGmail, switchDataset])
+
   const value = useMemo(
-    () => ({ ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit }),
-    [ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit],
+    () => ({ ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, gmail: gmailStatus, connectGmail, syncGmail, disconnectGmail, refreshGmail, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit }),
+    [ready, loading, live, dataset, datasets, switchDataset, importFolder, deleteDataset, gmailStatus, connectGmail, syncGmail, disconnectGmail, refreshGmail, emails, summary, resolutions, audit, feed, toasts, toast, dismissToast, getDetail, act, ask, refreshAudit],
   )
   return <C.Provider value={value}>{children}</C.Provider>
 }

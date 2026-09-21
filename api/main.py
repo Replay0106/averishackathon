@@ -5,7 +5,10 @@ Text extraction is deterministic; scanned PDFs use Gemini vision when a key is c
 Datasets: the bundled demo inbox ("demo") plus any folders imported through /api/datasets/import.
 """
 import dataclasses
+import atexit
+import hashlib
 import json
+import os
 import re
 import shutil
 import sys
@@ -23,9 +26,11 @@ sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from api import importer
+from api.gmail_service import GmailService, GmailServiceError, SESSION_COOKIE
 from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
@@ -46,20 +51,31 @@ FIELDS = [
 HERO_EMAIL, HERO_SHIPMENT = "email_043", "SHP-2048"
 
 app = FastAPI(title="NavisAI API", version="1.1")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+cors_origins = [x.strip() for x in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if x.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
+)
 
 classifier = EmailClassifier()
 extractor = FieldExtractor()
 reconciler = DocumentReconciler()
 ledger = TamperEvidentAuditLedger(str(ROOT / "audit_ledger.json"))
+gmail = GmailService()
 
 
 class Dataset:
-    def __init__(self, id: str, name: str, root: Path, kind: str = "import", created: Optional[str] = None, report: Optional[dict] = None):
+    def __init__(self, id: str, name: str, root: Path, kind: str = "import", created: Optional[str] = None,
+                 report: Optional[dict] = None, owner_id: Optional[str] = None):
         self.id, self.name, self.root, self.kind = id, name, root, kind
+        self.owner_id = owner_id
         self.created = created or datetime.utcnow().isoformat() + "Z"
         self.report = report or {}
         self.loader = InboxLoader(str(root))
+        self.email_ids = self.loader.get_email_ids()
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.overrides: Dict[str, Dict[str, Any]] = {}
         self.timing: Dict[str, float] = {}
@@ -67,10 +83,24 @@ class Dataset:
 
     def info(self) -> Dict[str, Any]:
         return {"id": self.id, "name": self.name, "kind": self.kind, "created": self.created,
-                "emails": len(self.loader.get_email_ids()), "job": self.job, "report": self.report}
+                "emails": len(self.email_ids), "job": self.job, "report": self.report}
 
 
 DATASETS: Dict[str, Dataset] = {"demo": Dataset("demo", "SDOC demo inbox", BUNDLE, kind="demo")}
+GMAIL_RUNTIME: Dict[str, str] = {}
+
+
+def _drop_gmail_runtime(user_id: str) -> None:
+    dataset_id = GMAIL_RUNTIME.pop(user_id, None)
+    dataset = DATASETS.pop(dataset_id, None) if dataset_id else None
+    if dataset:
+        shutil.rmtree(dataset.root, ignore_errors=True)
+
+
+@atexit.register
+def _cleanup_gmail_runtime() -> None:
+    for user_id in list(GMAIL_RUNTIME):
+        _drop_gmail_runtime(user_id)
 
 
 def _load_saved() -> None:
@@ -80,16 +110,28 @@ def _load_saved() -> None:
         meta = d / "meta.json"
         if meta.is_file():
             m = json.loads(meta.read_text(encoding="utf-8"))
-            DATASETS[d.name] = Dataset(d.name, m.get("name", d.name), d, created=m.get("created"), report=m.get("report"))
+            DATASETS[d.name] = Dataset(d.name, m.get("name", d.name), d, kind=m.get("kind", "import"),
+                                       created=m.get("created"), report=m.get("report"))
 
 
 _load_saved()
 
 
-def ds_of(ds: str) -> Dataset:
+def _session_user(request: Optional[Request]) -> Optional[str]:
+    if request is None:
+        return None
+    session = gmail.session(request.cookies.get(SESSION_COOKIE))
+    return session["user_id"] if session else None
+
+
+def ds_of(ds: str, request: Optional[Request] = None) -> Dataset:
     if ds not in DATASETS:
         raise HTTPException(404, f"unknown dataset {ds!r}")
-    return DATASETS[ds]
+    dataset = DATASETS[ds]
+    if dataset.owner_id and dataset.owner_id != _session_user(request):
+        # Do not disclose whether another user's private dataset exists.
+        raise HTTPException(404, f"unknown dataset {ds!r}")
+    return dataset
 
 
 def shipment_id(eid: str, ds: str = "demo") -> str:
@@ -101,7 +143,7 @@ def shipment_id(eid: str, ds: str = "demo") -> str:
 
 def email_for_shipment(d: Dataset, sid: str) -> Optional[str]:
     sid = sid.upper()
-    for eid in d.loader.get_email_ids():
+    for eid in d.email_ids:
         if shipment_id(eid, d.id) == sid:
             return eid
     return None
@@ -216,28 +258,28 @@ def _summary_row(d: Dataset, r: Dict[str, Any]) -> Dict[str, Any]:
 @app.get("/api/health")
 def health():
     d = DATASETS["demo"]
-    return {"status": "operational", "emails": len(d.loader.get_email_ids()), "datasets": len(DATASETS),
+    return {"status": "operational", "emails": len(d.email_ids), "datasets": len(DATASETS),
             "engine": "deterministic-text + gemini-vision", "ledger_ok": ledger.verify_integrity()[0]}
 
 
 @app.get("/api/emails")
-def emails(ds: str = "demo"):
-    d = ds_of(ds)
-    return [_summary_row(d, run_email(d, e)) for e in d.loader.get_email_ids()]
+def emails(request: Request, ds: str = "demo"):
+    d = ds_of(ds, request)
+    return [_summary_row(d, run_email(d, e)) for e in d.email_ids]
 
 
 @app.get("/api/emails/{eid}")
-def email_detail(eid: str, ds: str = "demo"):
-    d = ds_of(ds)
-    if eid not in d.loader.get_email_ids():
+def email_detail(eid: str, request: Request, ds: str = "demo"):
+    d = ds_of(ds, request)
+    if eid not in d.email_ids:
         raise HTTPException(404, "email not found")
     return _apply_override(d, run_email(d, eid))
 
 
 @app.get("/api/summary")
-def summary(ds: str = "demo"):
-    d = ds_of(ds)
-    rows = [run_email(d, e) for e in d.loader.get_email_ids()]
+def summary(request: Request, ds: str = "demo"):
+    d = ds_of(ds, request)
+    rows = [run_email(d, e) for e in d.email_ids]
     cats: Dict[str, int] = {}
     fields: Dict[str, int] = {}
     for r in rows:
@@ -264,18 +306,32 @@ class Action(BaseModel):
 
 
 @app.get("/api/audit")
-def audit():
+def audit(request: Request):
     ok, msg = ledger.verify_integrity()
-    return {"integrity": ok, "message": msg, "blocks": list(reversed(ledger.blocks))[:200]}
+    user_id = _session_user(request)
+    allowed_private = {d.id for d in DATASETS.values() if d.owner_id == user_id}
+    visible = [
+        block for block in ledger.blocks
+        if not str(block.get("email_id", "")).startswith("gmail_")
+        or str(block.get("email_id", "")).split(":", 1)[0] in allowed_private
+    ]
+    return {"integrity": ok, "message": msg, "blocks": list(reversed(visible))[:200]}
 
 
 @app.post("/api/emails/{eid}/action")
-def record(eid: str, body: Action, ds: str = "demo"):
-    d = ds_of(ds)
-    if eid not in d.loader.get_email_ids():
+def record(eid: str, body: Action, request: Request, ds: str = "demo"):
+    d = ds_of(ds, request)
+    if eid not in d.email_ids:
         raise HTTPException(404, "email not found")
     ref = eid if d.id == "demo" else f"{d.id}:{eid}"
-    block = ledger.record_action(body.actor, ref, body.action, body.details)
+    try:
+        session = gmail.require_csrf(
+            request.cookies.get(SESSION_COOKIE), request.headers.get("X-CSRF-Token")
+        ) if d.owner_id else None
+    except GmailServiceError as exc:
+        raise HTTPException(exc.status_code, str(exc))
+    actor = session["email"] if session else body.actor
+    block = ledger.record_action(actor, ref, body.action, body.details)
     if body.action in ("CONFIRM_AI_RESULT", "OVERRIDE_RESULT", "AMENDMENT_DISPATCHED", "AMENDMENT_CONFIRMED"):
         d.overrides[eid] = {"action": body.action, "at": datetime.utcnow().isoformat() + "Z", "block": block["index"], **body.details}
     return {"block": block}
@@ -286,14 +342,14 @@ def _find_target(d: Dataset, q: str) -> Optional[str]:
     if m:
         return email_for_shipment(d, m.group(0))
     m = re.search(r"email[_ ]?(\d{3})", q, re.I)
-    if m and f"email_{m.group(1)}" in d.loader.get_email_ids():
+    if m and f"email_{m.group(1)}" in d.email_ids:
         return f"email_{m.group(1)}"
     return None
 
 
 @app.get("/api/copilot")
-def copilot(q: str, ds: str = "demo"):
-    d = ds_of(ds)
+def copilot(request: Request, q: str, ds: str = "demo"):
+    d = ds_of(ds, request)
     eid = _find_target(d, q)
     if not eid:
         return {"kind": "help", "message": "Ask about a shipment, e.g. 'Why is SHP-2048 flagged?'"}
@@ -316,24 +372,120 @@ def copilot(q: str, ds: str = "demo"):
 
 # ---------------------------------------------------------------- dataset import
 def _process(d: Dataset) -> None:
-    ids = d.loader.get_email_ids()
+    ids = d.email_ids
     d.job.update(status="processing", done=0, total=len(ids), failed=[])
     for eid in ids:
-        r = run_email(d, eid)
-        if r.get("error"):
-            d.job["failed"].append({"id": eid, "error": r["error"]})
-        d.job["done"] += 1
+        try:
+            r = run_email(d, eid)
+            if r.get("error"):
+                d.job["failed"].append({"id": eid, "error": r["error"]})
+        except Exception as exc:
+            d.job["failed"].append({"id": eid, "error": f"{type(exc).__name__}: {exc}"})
+        finally:
+            d.job["done"] += 1
     d.job["status"] = "ready"
+    if d.kind == "gmail":
+        # The encrypted SQLite cache is the persistent copy. Remove decrypted
+        # working files as soon as the existing pipeline has populated memory.
+        shutil.rmtree(d.root, ignore_errors=True)
+
+
+# ---------------------------------------------------------------- Gmail OAuth + sync
+def _gmail_error(exc: GmailServiceError) -> HTTPException:
+    return HTTPException(exc.status_code, str(exc))
+
+
+@app.get("/api/gmail/status")
+def gmail_status(request: Request):
+    status = gmail.status(request.cookies.get(SESSION_COOKIE))
+    session = gmail.session(request.cookies.get(SESSION_COOKIE))
+    status["dataset_id"] = GMAIL_RUNTIME.get(session["user_id"]) if session else None
+    return status
+
+
+@app.get("/api/gmail/connect")
+def gmail_connect():
+    try:
+        return RedirectResponse(gmail.begin_oauth(), status_code=302)
+    except GmailServiceError as exc:
+        raise _gmail_error(exc)
+
+
+@app.get("/api/gmail/callback")
+def gmail_callback(code: str = "", state: str = "", error: str = ""):
+    if error:
+        raise HTTPException(400, f"Google authorization was not completed: {error}")
+    try:
+        result = gmail.complete_oauth(code, state)
+    except GmailServiceError as exc:
+        raise _gmail_error(exc)
+    response = RedirectResponse(gmail.frontend_url, status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE,
+        result.session_token,
+        max_age=7 * 86400,
+        httponly=True,
+        secure=gmail.cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/api/gmail/sync")
+def gmail_sync(request: Request):
+    try:
+        session = gmail.require_csrf(
+            request.cookies.get(SESSION_COOKIE), request.headers.get("X-CSRF-Token")
+        )
+        active_id = GMAIL_RUNTIME.get(session["user_id"])
+        if active_id and DATASETS.get(active_id) and DATASETS[active_id].job["status"] == "processing":
+            raise GmailServiceError("A Gmail sync is already being processed", 409)
+        root, report = gmail.sync(session["user_id"])
+    except GmailServiceError as exc:
+        raise _gmail_error(exc)
+
+    _drop_gmail_runtime(session["user_id"])
+    dataset_id = f"gmail_{hashlib.sha256(session['user_id'].encode()).hexdigest()[:10]}"
+    dataset = Dataset(
+        dataset_id,
+        f"Gmail · {session['email']}",
+        root,
+        kind="gmail",
+        report=report,
+        owner_id=session["user_id"],
+    )
+    DATASETS[dataset_id] = dataset
+    GMAIL_RUNTIME[session["user_id"]] = dataset_id
+    dataset.job.update(status="processing", done=0, total=report["emails"])
+    threading.Thread(target=_process, args=(dataset,), daemon=True).start()
+    return dataset.info()
+
+
+@app.post("/api/gmail/disconnect")
+def gmail_disconnect(request: Request):
+    try:
+        user_id = gmail.disconnect(
+            request.cookies.get(SESSION_COOKIE), request.headers.get("X-CSRF-Token")
+        )
+    except GmailServiceError as exc:
+        raise _gmail_error(exc)
+    if user_id:
+        _drop_gmail_runtime(user_id)
+    response = RedirectResponse(url="/api/gmail/status", status_code=303)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    return response
 
 
 @app.get("/api/datasets")
-def list_datasets():
-    return [d.info() for d in DATASETS.values()]
+def list_datasets(request: Request):
+    user_id = _session_user(request)
+    return [d.info() for d in DATASETS.values() if not d.owner_id or d.owner_id == user_id]
 
 
 @app.get("/api/datasets/{ds}")
-def get_dataset(ds: str):
-    return ds_of(ds).info()
+def get_dataset(ds: str, request: Request):
+    return ds_of(ds, request).info()
 
 
 @app.post("/api/datasets/import")
@@ -387,10 +539,12 @@ async def import_dataset(request: Request):
 
 
 @app.delete("/api/datasets/{ds}")
-def delete_dataset(ds: str):
-    d = ds_of(ds)
+def delete_dataset(ds: str, request: Request):
+    d = ds_of(ds, request)
     if d.kind == "demo":
         raise HTTPException(400, "The demo dataset cannot be deleted")
+    if d.kind == "gmail":
+        raise HTTPException(400, "Disconnect Gmail from Settings to remove this private dataset")
     DATASETS.pop(ds, None)
     shutil.rmtree(d.root, ignore_errors=True)
     return {"deleted": ds}

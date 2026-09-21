@@ -154,6 +154,7 @@ Engineered with **Averis institutional branding** (Deep Emerald `#059669`, Mint 
 ### Interface B: Full-Stack React + FastAPI Web Application (`web/` + `api/`)
 - **Backend API (`api/main.py`)**: High-performance FastAPI service with REST endpoints for ingestion, pipeline execution, metrics, and audit ledger queries.
 - **Dataset Importer (`api/importer.py`)**: Secure importer supporting arbitrary folder layouts, zip archives, and custom bundles with path traversal defense.
+- **Gmail Integration (`api/gmail_service.py`)**: Google OAuth 2.0 + PKCE login, read-only label-scoped Gmail sync, opaque user sessions, CSRF protection, and AES-256-GCM encryption for refresh tokens and cached messages.
 - **Frontend Client (`web/`)**: React 18, Vite, TypeScript, Tailwind CSS, Lucide icons, featuring interactive document viewers, live pipeline triggers, and discrepancy charts.
 
 ---
@@ -253,11 +254,20 @@ npm run dev
 ```
 Access the web application at: **`http://localhost:5173`**
 
+### 6. Enable Gmail Login and Labelled-Mail Sync (Optional)
+
+1. In Google Cloud Console, enable the Gmail API and configure the OAuth consent screen.
+2. Create a **Web application** OAuth client with the authorised redirect URI `http://localhost:8000/api/gmail/callback`.
+3. Copy the Gmail variables from `.env.example` into `.env`, insert the client ID/secret, and generate `APP_ENCRYPTION_KEY` with the command shown there.
+4. Restart FastAPI, create a Gmail label named `NavisAI`, apply it to the messages to process, then open **Settings → Connect Gmail**.
+
+The application requests only `gmail.readonly`. Synced tokens and message payloads are encrypted in `private/gmail.db`; decrypted attachment files are removed immediately after the classification pipeline has populated its in-memory results. For production, use HTTPS, set `COOKIE_SECURE=true`, and place the encryption key in a managed secret store.
+
 ---
 
 ## 8. Cybersecurity & Compliance Standards
 
-- **Data handling (current)**: Uploaded datasets and the audit ledger are stored as plain files on the server, and vision reads of scanned PDFs are cached in `.cache/`. Scanned pages are sent to the Google Gemini API; no data-processing agreement, residency decision or retention policy is in place yet. Not a zero-retention system.
+- **Data handling (current)**: Gmail refresh tokens and cached Gmail payloads are encrypted at rest with AES-256-GCM. Manually uploaded datasets and the audit ledger are still stored as plain files on the server, and vision reads of scanned PDFs are cached in `.cache/`. Scanned pages are sent to the Google Gemini API; no data-processing agreement, residency decision or retention policy is in place yet. Not a zero-retention system.
 - **Cryptographic Audit Trail**: All actions (extraction, human corrections, carrier dispatches) are recorded in a SHA-256 hash-chained ledger. Edits to earlier entries are detectable; the ledger is a local file and is not signed, externally anchored or certified against any standard.
 - **Standards posture**: NavisAI is designed with reference to ISO/IEC 42001, ISO/IEC 27001, DCSA, the EU AI Act principles and SOC 2 criteria. It holds **no certification or attestation** against any of them and does not implement DCSA eBL. The risk engine references ICC UCP 600 and IMO SOLAS VGM as advisory context only. See `STANDARDS_ALIGNMENT.md` for the evidence-based assessment.
 
