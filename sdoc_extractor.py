@@ -31,6 +31,7 @@ try:
 except ImportError:
     PdfReader = None
 
+import sdoc_store
 from sdoc_loader import AttachmentData
 
 try:
@@ -83,6 +84,9 @@ class FieldExtractor:
         self._clients: Dict[str, Any] = {}
         default_cache = Path(__file__).resolve().parent / ".cache" / "vision_cache.json"
         self.cache_path = Path(cache_path) if cache_path else default_cache
+        # With the default cache location, reads are also kept in Supabase (when configured) so they survive
+        # restarts and cold starts on a serverless host; an explicit cache_path stays purely local.
+        self._shared = cache_path is None
 
     def _log_call(self, cache_key: str, model: str, started: float, resp: Any = None, error: Optional[Exception] = None, image_bytes: int = 0) -> None:
         """Append one line per live vision call (latency, tokens, outcome) to .cache/vision_calls.jsonl.
@@ -99,6 +103,11 @@ class FieldExtractor:
             "output_tokens": getattr(usage, "candidates_token_count", None),
             "total_tokens": getattr(usage, "total_token_count", None),
         }
+        if self._shared:
+            try:
+                sdoc_store.vision_log(entry)
+            except Exception:
+                pass
         try:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.cache_path.parent / "vision_calls.jsonl", "a", encoding="utf-8") as f:
@@ -107,12 +116,24 @@ class FieldExtractor:
             pass
 
     def _cache_get(self, key: str) -> Optional[Dict[str, Any]]:
+        if self._shared:
+            try:
+                hit = sdoc_store.vision_get(key)
+                if hit is not None:
+                    return hit
+            except Exception:
+                pass
         try:
             return json.loads(self.cache_path.read_text(encoding="utf-8")).get(key)
         except Exception:
             return None
 
     def _cache_put(self, key: str, data: Dict[str, Any]) -> None:
+        if self._shared:
+            try:
+                sdoc_store.vision_put(key, data)
+            except Exception:
+                pass
         try:
             try:
                 store = json.loads(self.cache_path.read_text(encoding="utf-8"))

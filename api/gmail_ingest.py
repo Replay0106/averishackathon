@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import sdoc_store
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -141,6 +142,7 @@ def gmail_simulate(req: SimulateRequest):
 
         ds_id = _state.dataset_id or "gmail_live"
         ds_dir = DATASETS_DIR / ds_id
+        _restore_stored_dataset(ds_id)
         (ds_dir / "inbox").mkdir(parents=True, exist_ok=True)
         (ds_dir / "attachments").mkdir(parents=True, exist_ok=True)
 
@@ -433,6 +435,31 @@ def gmail_disconnect():
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _restore_stored_dataset(ds_id: str) -> None:
+    """After a restart on a serverless host the local copy of the Gmail dataset is gone; bring it back from Supabase."""
+    try:
+        from api.main import DATASETS
+
+        existing = DATASETS.get(ds_id)
+        if existing is not None and existing.remote:
+            existing.ensure_local()
+    except Exception as e:  # noqa: BLE001
+        logger.error("Could not restore stored dataset %s: %s", ds_id, e)
+
+
+def _persist_new_emails(new_email_ids: list) -> None:
+    """Keep newly ingested emails (record and attachments) in Supabase so they survive restarts."""
+    backend = sdoc_store.get_store()
+    if backend is None or not _state.dataset_id:
+        return
+    root = DATASETS_DIR / _state.dataset_id
+    for eid in new_email_ids:
+        try:
+            sdoc_store.save_extra_email(backend, _state.dataset_id, root, eid)
+        except Exception as e:  # noqa: BLE001
+            logger.error("Could not store %s: %s", eid, e)
+
+
 def _ensure_dataset_registered(ds_id: str, ds_dir: Path) -> None:
     """Register the gmail dataset in the main DATASETS dict if not already there."""
     try:
@@ -452,6 +479,12 @@ def _ensure_dataset_registered(ds_id: str, ds_dir: Path) -> None:
                 pass
             DATASETS[ds_id] = ds
             _state.dataset_ref = ds
+            backend = sdoc_store.get_store()
+            if backend is not None:
+                try:
+                    sdoc_store.save_dataset_row(backend, ds_id, "Gmail Live Inbox", "gmail", ds.created, {})
+                except Exception as e:
+                    logger.error("Could not store the gmail dataset row: %s", e)
             logger.info("Registered gmail dataset: %s", ds_id)
         else:
             _state.dataset_ref = DATASETS[ds_id]
@@ -462,6 +495,7 @@ def _ensure_dataset_registered(ds_id: str, ds_dir: Path) -> None:
 
 def _process_new_emails(new_email_ids: list) -> None:
     """Run the pipeline on newly ingested emails and inject into active demo dataset."""
+    _persist_new_emails(new_email_ids)
     try:
         from api.main import DATASETS, run_email
 

@@ -122,8 +122,23 @@ class GmailWatcher:
     # State persistence
     # ------------------------------------------------------------------
 
+    def _kv_key(self) -> str:
+        return f"gmail_state:{self.dataset_dir.name}"
+
     def _load_state(self) -> None:
-        """Load watcher state from disk."""
+        """Load watcher state: from Supabase when it is configured, otherwise from disk."""
+        try:
+            import sdoc_store
+
+            stored = sdoc_store.kv_get(self._kv_key()) if sdoc_store.get_store() is not None else None
+        except Exception as e:
+            logger.warning("Failed to load stored state: %s", e)
+            stored = None
+        if isinstance(stored, dict):
+            self._state["history_id"] = stored.get("history_id")
+            self._state["processed_ids"] = stored.get("processed_ids", [])
+            self._state["email_counter"] = stored.get("email_counter", 0)
+            return
         if self.state_path.is_file():
             try:
                 data = json.loads(self.state_path.read_text(encoding="utf-8"))
@@ -136,7 +151,14 @@ class GmailWatcher:
                 logger.warning("Failed to load state: %s", e)
 
     def _save_state(self) -> None:
-        """Persist watcher state to disk."""
+        """Persist watcher state to Supabase (when configured) and to disk."""
+        try:
+            import sdoc_store
+
+            if sdoc_store.get_store() is not None:
+                sdoc_store.kv_set(self._kv_key(), self._state)
+        except Exception as e:
+            logger.error("Failed to store state: %s", e)
         try:
             self.state_path.parent.mkdir(parents=True, exist_ok=True)
             self.state_path.write_text(

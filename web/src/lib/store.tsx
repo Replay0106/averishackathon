@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { zipSync } from 'fflate'
 import type { Amendment, AuditBlock, CopilotReply, EmailDetail, EmailRow, Resolution, Summary } from './types'
 import { clock } from './utils'
 
@@ -259,16 +260,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // With Supabase storage, the browser zips the folder into parts and uploads them straight to the bucket
+  // (a serverless API rejects large request bodies), then asks the API to process what was uploaded.
+  const uploadDirect = useCallback(async (files: PickedFile[], name: string, maxPart: number): Promise<Response> => {
+    const cap = Math.floor(maxPart * 0.9)
+    const groups: PickedFile[][] = [[]]
+    let size = 0
+    for (const f of files) {
+      if (f.file.size > cap) throw new Error(`${f.path} is larger than ${Math.round(cap / 1048576)} MB and cannot be uploaded`)
+      if (size + f.file.size > cap && groups[groups.length - 1].length) {
+        groups.push([])
+        size = 0
+      }
+      groups[groups.length - 1].push(f)
+      size += f.file.size
+    }
+    let plan: Response
+    try {
+      plan = await fetch(resolveApiPath('/api/datasets/uploads'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, parts: groups.length }) })
+    } catch {
+      throw new Error('Cannot reach the NavisAI API.')
+    }
+    if (!plan.ok) throw new Error((await plan.json().catch(() => ({}))).detail ?? `Could not start the upload (${plan.status})`)
+    const { dataset_id, uploads } = (await plan.json()) as { dataset_id: string; uploads: { part: number; url: string }[] }
+    for (let i = 0; i < groups.length; i++) {
+      const entries: Record<string, Uint8Array> = {}
+      for (const f of groups[i]) entries[f.path] = new Uint8Array(await f.file.arrayBuffer())
+      const zip = zipSync(entries, { level: 0 })
+      const put = await fetch(uploads[i].url, { method: 'PUT', headers: { 'Content-Type': 'application/zip', 'x-upsert': 'true' }, body: new Blob([zip as BlobPart]) })
+      if (!put.ok) throw new Error(`Upload of part ${i + 1} of ${groups.length} failed (${put.status})`)
+    }
+    return fetch(resolveApiPath(`/api/datasets/${dataset_id}/finalize`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, parts: groups.length }) })
+  }, [])
+
   const importFolder = useCallback(
     async (files: PickedFile[], name: string, onProgress: (done: number, total: number) => void) => {
-      const form = new FormData()
-      form.append('name', name)
-      form.append('paths', JSON.stringify(files.map((f) => f.path)))
-      files.forEach((f) => form.append('files', f.file, f.file.name))
+      const storage = await api<{ direct_upload: boolean; max_part_bytes: number }>('/api/storage/status')
       let res: Response
       try {
-        res = await fetch(resolveApiPath('/api/datasets/import'), { method: 'POST', body: form })
-      } catch {
+        if (storage?.direct_upload) {
+          res = await uploadDirect(files, name, storage.max_part_bytes)
+        } else {
+          const form = new FormData()
+          form.append('name', name)
+          form.append('paths', JSON.stringify(files.map((f) => f.path)))
+          files.forEach((f) => form.append('files', f.file, f.file.name))
+          res = await fetch(resolveApiPath('/api/datasets/import'), { method: 'POST', body: form })
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message !== 'Failed to fetch') throw e
         throw new Error('Cannot reach the NavisAI API. Start it with: uvicorn api.main:app --port 8000')
       }
       if (!res.ok) {
@@ -287,7 +327,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await refreshDatasets()
       return info
     },
-    [refreshDatasets],
+    [refreshDatasets, uploadDirect],
   )
 
   const deleteDataset = useCallback(

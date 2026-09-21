@@ -210,9 +210,10 @@ class TamperEvidentAuditLedger:
         """
         Verifies that no entry in the ledger has been tampered with.
         """
-        for i in range(1, len(self.blocks)):
-            curr = self.blocks[i]
-            prev = self.blocks[i - 1]
+        blocks = self.blocks
+        for i in range(1, len(blocks)):
+            curr = blocks[i]
+            prev = blocks[i - 1]
             if curr["previous_hash"] != prev["block_hash"]:
                 return False, f"Broken link at block index {i}: previous_hash mismatch."
             payload_str = f"{curr['index']}:{curr['timestamp']}:{curr['actor']}:{curr['email_id']}:{curr['action']}:{json.dumps(curr['details'], sort_keys=True)}:{curr['previous_hash']}"

@@ -6,6 +6,7 @@ Datasets: the bundled demo inbox ("demo") plus any folders imported through /api
 """
 import dataclasses
 import json
+import os
 import re
 import shutil
 import sys
@@ -31,12 +32,12 @@ from api import importer
 from api.gateway_routes import bootstrap_from_dataset
 from api.gateway_routes import router as gateway_router
 from api.gmail_ingest import gmail_router
-from sdoc_amendment import AmendmentOutbox, SEND, build_manual_message, build_message, decide as decide_amendment, send_block
+import sdoc_store
+from sdoc_amendment import SEND, build_manual_message, build_message, decide as decide_amendment, send_block
 from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
 from sdoc_reconciler import DocumentReconciler, select_documents
-from sdoc_security import TamperEvidentAuditLedger
 from security_layer.gates import RateLimiter
 
 BUNDLE = ROOT / "sdoc-hackathon-bundle"
@@ -91,13 +92,22 @@ async def rate_limit_middleware(request: Request, call_next):
 classifier = EmailClassifier()
 extractor = FieldExtractor()
 reconciler = DocumentReconciler()
-ledger = TamperEvidentAuditLedger(str(ROOT / "audit_ledger.json"))
-outbox = AmendmentOutbox(str(ROOT / ".cache" / "amendments.db"))
+try:
+    # Supabase when SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set, local files otherwise.
+    ledger = sdoc_store.make_ledger(str(ROOT / "audit_ledger.json"))
+    outbox = sdoc_store.make_outbox(str(ROOT / ".cache" / "amendments.db"))
+except sdoc_store.StoreError as e:
+    raise RuntimeError(f"Supabase is configured but its tables are not usable ({e}). Apply supabase/migrations/*.sql to the project.") from e
+decisions = sdoc_store.make_decisions()
 
 
 class Dataset:
-    def __init__(self, id: str, name: str, root: Path, kind: str = "import", created: Optional[str] = None, report: Optional[dict] = None):
+    def __init__(self, id: str, name: str, root: Path, kind: str = "import", created: Optional[str] = None, report: Optional[dict] = None, remote: bool = False):
         self.id, self.name, self.root, self.kind = id, name, root, kind
+        # remote: the files live in Supabase Storage and are copied into `root` (a local cache) on first use
+        self.remote = remote
+        self.hydrated = not remote
+        self._hydrate_lock = threading.Lock()
         self.created = created or datetime.utcnow().isoformat() + "Z"
         self.report = report or {}
         self.loader = InboxLoader(str(root))
@@ -121,31 +131,85 @@ class Dataset:
             except Exception:
                 pass
 
+    def ensure_local(self) -> None:
+        """Copy a stored dataset from Supabase Storage into the local cache once per process."""
+        if self.hydrated:
+            return
+        with self._hydrate_lock:
+            if self.hydrated:
+                return
+            backend = sdoc_store.get_store()
+            if backend is not None:
+                sdoc_store.hydrate(backend, self.id, self.root)
+            self.hydrated = True
+
+    def refresh_decisions(self) -> None:
+        self.overrides = decisions.all(self.id)
+
     def info(self) -> Dict[str, Any]:
+        count = len(self.loader.get_email_ids()) if self.hydrated else int(self.report.get("emails", 0))
         return {"id": self.id, "name": self.name, "kind": self.kind, "created": self.created,
-                "emails": len(self.loader.get_email_ids()), "job": self.job, "report": self.report}
+                "emails": count, "job": self.job, "report": self.report}
 
 
 DATASETS: Dict[str, Dataset] = {"demo": Dataset("demo", "SDOC demo inbox", BUNDLE, kind="demo")}
 
 
 def _load_saved() -> None:
-    if not DATASETS_DIR.is_dir():
+    if DATASETS_DIR.is_dir():
+        for d in sorted(DATASETS_DIR.iterdir()):
+            meta = d / "meta.json"
+            if meta.is_file():
+                m = json.loads(meta.read_text(encoding="utf-8"))
+                DATASETS[d.name] = Dataset(d.name, m.get("name", d.name), d, created=m.get("created"), report=m.get("report"))
+    backend = sdoc_store.get_store()
+    if backend is None:
         return
-    for d in sorted(DATASETS_DIR.iterdir()):
-        meta = d / "meta.json"
-        if meta.is_file():
-            m = json.loads(meta.read_text(encoding="utf-8"))
-            DATASETS[d.name] = Dataset(d.name, m.get("name", d.name), d, created=m.get("created"), report=m.get("report"))
+    try:
+        rows = sdoc_store.list_dataset_rows(backend)
+    except sdoc_store.StoreError as e:
+        raise RuntimeError(f"Supabase is configured but the datasets table is not usable ({e}). Apply supabase/migrations/*.sql.") from e
+    for r in rows:
+        if r["id"] not in DATASETS:
+            DATASETS[r["id"]] = Dataset(r["id"], r["name"], DATASETS_DIR / r["id"], kind=r.get("kind", "import"),
+                                        created=r.get("created"), report=r.get("report"), remote=True)
 
 
 _load_saved()
 
 
+_gmail_reinjected = False
+
+
+def _reinject_gmail_into_demo() -> None:
+    """Simulated and live Gmail emails are shown in the demo inbox as well; that view is rebuilt in memory, so
+    after a restart the stored Gmail emails are put back."""
+    global _gmail_reinjected
+    if _gmail_reinjected or sdoc_store.get_store() is None:
+        return
+    _gmail_reinjected = True
+    demo = DATASETS.get("demo")
+    if demo is None:
+        return
+    for g in [d for d in DATASETS.values() if d.kind == "gmail"]:
+        try:
+            g.ensure_local()
+            g.loader = InboxLoader(str(g.root))
+            for eid in reversed(g.loader.get_email_ids()):
+                demo.loader.inject_email(eid, g.loader.get_email(eid))
+        except Exception:
+            continue
+
+
 def ds_of(ds: str) -> Dataset:
     if ds not in DATASETS:
         raise HTTPException(404, f"unknown dataset {ds!r}")
-    return DATASETS[ds]
+    d = DATASETS[ds]
+    if d.remote:
+        d.ensure_local()
+    if d.id == "demo":
+        _reinject_gmail_into_demo()
+    return d
 
 
 def shipment_id(eid: str, ds: str = "demo") -> str:
@@ -378,16 +442,37 @@ def root():
     }
 
 
+def _storage_health() -> Dict[str, Any]:
+    backend = sdoc_store.get_store()
+    if backend is None:
+        return {"backend": "local", "persistent": False}
+    try:
+        backend.select(sdoc_store.T_DATASETS, limit=1)
+        return {"backend": "supabase", "persistent": True, "ok": True}
+    except Exception as e:  # noqa: BLE001
+        return {"backend": "supabase", "persistent": True, "ok": False, "error": str(e)[:200]}
+
+
+@app.get("/api/storage/status")
+def storage_status():
+    """Tells the web app how uploads should work: straight to Supabase Storage, or through this API."""
+    backend = sdoc_store.get_store()
+    return {"backend": "supabase" if backend is not None else "local", "direct_upload": backend is not None,
+            "max_part_bytes": sdoc_store.PACK_LIMIT_BYTES, "max_total_bytes": importer.MAX_TOTAL_BYTES}
+
+
 @app.get("/api/health")
 def health():
     d = DATASETS["demo"]
     return {"status": "operational", "emails": len(d.loader.get_email_ids()), "datasets": len(DATASETS),
-            "engine": "deterministic-text + gemini-vision", "ledger_ok": ledger.verify_integrity()[0]}
+            "engine": "deterministic-text + gemini-vision", "ledger_ok": ledger.verify_integrity()[0],
+            "storage": _storage_health()}
 
 
 @app.get("/api/emails")
 def emails(ds: str = "demo"):
     d = ds_of(ds)
+    d.refresh_decisions()
     ensure_amendments(d)
     amends = outbox.all(d.id)
     return [_summary_row(d, run_email(d, e), amends) for e in d.loader.get_email_ids()]
@@ -398,6 +483,7 @@ def email_detail(eid: str, ds: str = "demo"):
     d = ds_of(ds)
     if eid not in d.loader.get_email_ids():
         raise HTTPException(404, "email not found")
+    d.refresh_decisions()
     ensure_amendments(d)
     return _apply_override(d, run_email(d, eid))
 
@@ -489,7 +575,9 @@ def record(eid: str, body: Action, ds: str = "demo"):
     if body.action == "AMENDMENT_CONFIRMED":
         outbox.set_status(d.id, eid, "confirmed")
     if body.action in ("CONFIRM_AI_RESULT", "OVERRIDE_RESULT", "AMENDMENT_DISPATCHED", "AMENDMENT_CONFIRMED"):
-        d.overrides[eid] = {"action": body.action, "at": datetime.utcnow().isoformat() + "Z", "block": block["index"], **body.details}
+        value = {"action": body.action, "at": datetime.utcnow().isoformat() + "Z", "block": block["index"], **body.details}
+        d.overrides[eid] = value
+        decisions.set(d.id, eid, value)
     return {"block": block}
 
 
@@ -537,6 +625,112 @@ def _process(d: Dataset) -> None:
         d.job["done"] += 1
     ensure_amendments(d)
     d.job["status"] = "ready"
+
+
+def _persist_dataset(d: Dataset) -> None:
+    """Keep a newly imported dataset in Supabase (documents as zip packs in the bucket, metadata in a table)."""
+    backend = sdoc_store.get_store()
+    if backend is None:
+        return
+    packs = sdoc_store.save_pack(backend, d.id, d.root)
+    d.report = {**d.report, "packs": packs}
+    sdoc_store.save_dataset_row(backend, d.id, d.name, d.kind, d.created, d.report)
+
+
+class UploadPlan(BaseModel):
+    name: str = ""
+    parts: int = 1
+
+
+@app.post("/api/datasets/uploads")
+def plan_uploads(plan: UploadPlan):
+    """Step 1 of a browser-direct import: hand out signed URLs so the browser can upload zip parts of the picked
+    folder straight to Supabase Storage. (Vercel functions reject request bodies above about 4.5 MB.)"""
+    backend = sdoc_store.get_store()
+    if backend is None:
+        raise HTTPException(400, "Direct upload needs Supabase; use POST /api/datasets/import instead")
+    max_parts = importer.MAX_TOTAL_BYTES // sdoc_store.PACK_LIMIT_BYTES + 2
+    if not 1 <= plan.parts <= max_parts:
+        raise HTTPException(400, f"parts must be between 1 and {max_parts}")
+    ds_id = f"imp_{uuid.uuid4().hex[:8]}"
+    uploads = []
+    for i in range(1, plan.parts + 1):
+        path = f"{ds_id}/raw/part-{i:04d}.zip"
+        uploads.append({"part": i, **backend.signed_upload(path)})
+    return {"dataset_id": ds_id, "uploads": uploads}
+
+
+class FinalizeUpload(BaseModel):
+    name: str = ""
+    parts: int = 1
+
+
+def _extract_raw_parts(parts: List[bytes], staging: Path) -> None:
+    """Unzip uploaded parts into staging with the same path rules as the multipart import."""
+    import io
+    import zipfile
+
+    archives = [zipfile.ZipFile(io.BytesIO(b)) for b in parts]
+    entries = [(a, i) for a in archives for i in a.infolist() if not i.is_dir()]
+    if len(entries) > importer.MAX_FILES:
+        raise HTTPException(413, f"Too many files (max {importer.MAX_FILES})")
+    if sum(i.file_size for _, i in entries) > importer.MAX_TOTAL_BYTES:
+        raise HTTPException(413, "Upload exceeds 250 MB")
+    try:
+        safe = importer.strip_common_root([importer.safe_relpath(i.filename) for _, i in entries])
+    except importer.ImportError_ as e:
+        raise HTTPException(400, str(e))
+    for (arc, info), p in zip(entries, safe):
+        if p.suffix.lower() not in importer.ALLOWED_EXT:
+            continue
+        target = staging / p
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(arc.read(info))
+
+
+@app.post("/api/datasets/{ds_id}/finalize")
+def finalize_upload(ds_id: str, body: FinalizeUpload):
+    """Step 2 of a browser-direct import: read the uploaded parts from Supabase Storage, normalise them exactly like
+    the multipart import, and store the result as the dataset."""
+    backend = sdoc_store.get_store()
+    if backend is None:
+        raise HTTPException(400, "Direct upload needs Supabase")
+    if not re.fullmatch(r"imp_[0-9a-f]{8}", ds_id) or ds_id in DATASETS:
+        raise HTTPException(400, "invalid or already used dataset id")
+    raw_paths = [f"{ds_id}/raw/part-{i:04d}.zip" for i in range(1, body.parts + 1)]
+    parts = []
+    for path in raw_paths:
+        data = backend.get_object(path)
+        if data is None:
+            raise HTTPException(400, f"upload part missing: {path}")
+        parts.append(data)
+    staging = Path(tempfile.mkdtemp(prefix="navis_import_"))
+    dest = DATASETS_DIR / ds_id
+    try:
+        _extract_raw_parts(parts, staging)
+        try:
+            report = importer.normalise(staging, dest)
+        except importer.ImportError_ as e:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise HTTPException(422, str(e))
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    label = body.name.strip() or f"Import {datetime.utcnow():%Y-%m-%d %H:%M}"
+    d = Dataset(ds_id, label, dest, report=report)
+    try:
+        (dest / "meta.json").write_text(json.dumps({"name": label, "created": d.created, "report": report}), encoding="utf-8")
+    except OSError:
+        pass
+    _persist_dataset(d)
+    backend.delete_objects(raw_paths)
+    DATASETS[ds_id] = d
+    if "VERCEL" in os.environ:
+        d.job.update(status="ready", done=0, total=report["emails"])  # a serverless instance is frozen after it responds
+    else:
+        d.job.update(status="processing", done=0, total=report["emails"])
+        threading.Thread(target=_process, args=(d,), daemon=True).start()
+    return d.info()
 
 
 @app.get("/api/datasets")
@@ -593,6 +787,7 @@ async def import_dataset(request: Request):
     label = name.strip() or f"Import {datetime.utcnow():%Y-%m-%d %H:%M}"
     d = Dataset(ds_id, label, dest, report=report)
     (dest / "meta.json").write_text(json.dumps({"name": label, "created": d.created, "report": report}), encoding="utf-8")
+    _persist_dataset(d)
     DATASETS[ds_id] = d
     d.job.update(status="processing", done=0, total=report["emails"])
     threading.Thread(target=_process, args=(d,), daemon=True).start()
@@ -606,6 +801,11 @@ def delete_dataset(ds: str):
         raise HTTPException(400, "The demo dataset cannot be deleted")
     DATASETS.pop(ds, None)
     shutil.rmtree(d.root, ignore_errors=True)
+    backend = sdoc_store.get_store()
+    if backend is not None:
+        sdoc_store.delete_dataset_everywhere(backend, ds)
+    else:
+        decisions.clear(ds)
     return {"deleted": ds}
 
 
