@@ -31,6 +31,7 @@ from api import importer
 from api.gateway_routes import bootstrap_from_dataset
 from api.gateway_routes import router as gateway_router
 from api.gmail_ingest import gmail_router
+from sdoc_amendment import AmendmentOutbox, SEND, build_manual_message, build_message, decide as decide_amendment, send_block
 from sdoc_classifier import EmailClassifier, is_draft_request
 from sdoc_extractor import FieldExtractor
 from sdoc_loader import InboxLoader
@@ -91,6 +92,7 @@ classifier = EmailClassifier()
 extractor = FieldExtractor()
 reconciler = DocumentReconciler()
 ledger = TamperEvidentAuditLedger(str(ROOT / "audit_ledger.json"))
+outbox = AmendmentOutbox(str(ROOT / ".cache" / "amendments.db"))
 
 
 class Dataset:
@@ -103,6 +105,8 @@ class Dataset:
         self.overrides: Dict[str, Dict[str, Any]] = {}
         self.timing: Dict[str, float] = {}
         self.job: Dict[str, Any] = {"status": "ready", "done": 0, "total": 0, "failed": []}
+        self.amend_lock = threading.Lock()
+        self.amend_done = False
         if self.id == "demo":
             self._seed_cache_from_snapshot()
 
@@ -255,14 +259,100 @@ def run_email(d: Dataset, eid: str) -> Dict[str, Any]:
     return result
 
 
+def _ledger_ref(d: Dataset, eid: str) -> str:
+    return eid if d.id == "demo" else f"{d.id}:{eid}"
+
+
+def _gateway_verdict(d: Dataset, eid: str) -> Optional[Dict[str, Any]]:
+    """The Trust Gateway's decision for an email; only the demo inbox is run through the gateway."""
+    if d.kind != "demo":
+        return None
+    try:
+        from api import gateway_routes as gr
+        dec = gr.GATEWAY.decisions_by_email_id.get(eid)
+    except Exception:
+        return None
+    return None if dec is None else {"accepted": dec.accepted, "held": dec.held, "failed_gate": dec.failed_gate}
+
+
+def ensure_amendments(d: Dataset) -> None:
+    """Send (record) the automatic amendments for a dataset once. The outbox is durable and keyed by
+    the exact differences, so a restart or a repeat call never sends the same amendment twice."""
+    if d.amend_done:
+        return
+    with d.amend_lock:
+        if d.amend_done:
+            return
+        for eid in d.loader.get_email_ids():
+            r = run_email(d, eid)
+            if r["category"] != "BL_COMPARISON" or r["status"] != "MISMATCH":
+                continue
+            verdict = _gateway_verdict(d, eid)
+            decision, reason = decide_amendment(r, verdict)
+            if decision != SEND:
+                continue
+            msg = build_message(r)
+            row = outbox.record(d.id, eid, r["shipment"], msg, decision, reason)
+            if row is None:
+                continue
+            try:
+                block = ledger.record_action(
+                    "NavisAI Auto-Amend", _ledger_ref(d, eid), "AMENDMENT_DISPATCHED",
+                    {"auto": True, "recipient": msg["recipient"], "subject": msg["subject"],
+                     "fields": [{"key": f["key"], "si": f["si"], "bl": f["bl"]} for f in msg["fields"]],
+                     "policy": decision, "reason": reason, "gateway": verdict, "shipment": r["shipment"]},
+                )
+            except Exception:
+                outbox.discard(row["id"])
+                raise
+            outbox.attach_block(row["id"], block["index"])
+        d.amend_done = True
+
+
+def _amendment_view(a: Optional[Dict[str, Any]], full: bool = False) -> Optional[Dict[str, Any]]:
+    if not a:
+        return None
+    v = {"status": a["status"], "at": a["created_at"], "recipient": a["recipient"], "subject": a["subject"], "block": a["block_index"], "auto": a["decision"] == SEND}
+    if full:
+        v |= {"body": a["body"], "fields": a["fields"], "reason": a["reason"]}
+    return v
+
+
+def _resolution(d: Dataset, eid: str, amends: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    ov = d.overrides.get(eid)
+    if ov:
+        return ov
+    a = amends.get(eid)
+    if not a:
+        return None
+    action = "AMENDMENT_CONFIRMED" if a["status"] == "confirmed" else "AMENDMENT_DISPATCHED"
+    return {"action": action, "at": a["updated_at"], "block": a["block_index"], "auto": a["decision"] == SEND, "recipient": a["recipient"]}
+
+
+def _case_info(d: Dataset, r: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if r["category"] != "BL_COMPARISON" or r["status"] == "OK":
+        return None
+    verdict = _gateway_verdict(d, r["id"])
+    decision, reason = decide_amendment(r, verdict)
+    blocked = send_block(r, verdict)
+    return {"decision": decision, "reason": reason, "can_send": blocked is None, "block_reason": blocked}
+
+
 def _apply_override(d: Dataset, r: Dict[str, Any]) -> Dict[str, Any]:
-    ov = d.overrides.get(r["id"])
-    return {**r, "resolution": ov} if ov else r
+    amends = {r["id"]: a} if (a := outbox.get(d.id, r["id"])) else {}
+    res = _resolution(d, r["id"], amends)
+    out = {**r, "amendment": _amendment_view(amends.get(r["id"]), full=True), "case": _case_info(d, r)}
+    return {**out, "resolution": res} if res else out
 
 
-def _summary_row(d: Dataset, r: Dict[str, Any]) -> Dict[str, Any]:
+def _summary_row(d: Dataset, r: Dict[str, Any], amends: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
+    amends = amends if amends is not None else {}
     keys = ("id", "shipment", "sender", "subject", "category", "status", "review_reason", "defect_fields", "confidence", "attachments", "meta")
-    return {k: r[k] for k in keys} | {"resolution": d.overrides.get(r["id"])}
+    return {k: r[k] for k in keys} | {
+        "resolution": _resolution(d, r["id"], amends),
+        "amendment": _amendment_view(amends.get(r["id"])),
+        "case": _case_info(d, r),
+    }
 
 
 @app.get("/api")
@@ -298,7 +388,9 @@ def health():
 @app.get("/api/emails")
 def emails(ds: str = "demo"):
     d = ds_of(ds)
-    return [_summary_row(d, run_email(d, e)) for e in d.loader.get_email_ids()]
+    ensure_amendments(d)
+    amends = outbox.all(d.id)
+    return [_summary_row(d, run_email(d, e), amends) for e in d.loader.get_email_ids()]
 
 
 @app.get("/api/emails/{eid}")
@@ -306,6 +398,7 @@ def email_detail(eid: str, ds: str = "demo"):
     d = ds_of(ds)
     if eid not in d.loader.get_email_ids():
         raise HTTPException(404, "email not found")
+    ensure_amendments(d)
     return _apply_override(d, run_email(d, eid))
 
 
@@ -344,13 +437,57 @@ def audit():
     return {"integrity": ok, "message": msg, "blocks": list(reversed(ledger.blocks))[:200]}
 
 
+class SendAmendment(BaseModel):
+    actor: str = "Operations Desk"
+
+
+@app.post("/api/emails/{eid}/send-amendment")
+def send_amendment(eid: str, body: SendAmendment, ds: str = "demo"):
+    """A reviewer sends the amendment (or request for missing documents) for a case that was held for a person.
+    Recorded like an automatic send, but the ledger entry names the reviewer as the approver."""
+    d = ds_of(ds)
+    if eid not in d.loader.get_email_ids():
+        raise HTTPException(404, "email not found")
+    ensure_amendments(d)
+    r = run_email(d, eid)
+    if r["category"] != "BL_COMPARISON" or r["status"] == "OK":
+        raise HTTPException(400, "nothing to amend: the documents match or this is not an SI/BL check")
+    if outbox.get(d.id, eid):
+        raise HTTPException(409, "an amendment was already sent for this case")
+    verdict = _gateway_verdict(d, eid)
+    blocked = send_block(r, verdict)
+    if blocked:
+        raise HTTPException(403, f"cannot send: {blocked}")
+    msg = build_manual_message(r)
+    reason = f"sent by {body.actor}"
+    row = outbox.record(d.id, eid, r["shipment"], msg, "MANUAL_SEND", reason)
+    if row is None:
+        raise HTTPException(409, "an amendment was already sent for this case")
+    try:
+        block = ledger.record_action(
+            body.actor, _ledger_ref(d, eid), "AMENDMENT_DISPATCHED",
+            {"auto": False, "approved_by": body.actor, "recipient": msg["recipient"], "subject": msg["subject"],
+             "fields": [{"key": f["key"], "si": f["si"], "bl": f["bl"]} for f in msg["fields"]],
+             "policy": "MANUAL_SEND", "reason": reason, "case_status": r["status"], "review_reason": r["review_reason"],
+             "gateway": verdict, "shipment": r["shipment"]},
+        )
+    except Exception:
+        outbox.discard(row["id"])
+        raise
+    outbox.attach_block(row["id"], block["index"])
+    row = outbox.get(d.id, eid)
+    return {"block": block, "amendment": _amendment_view(row, full=True), "resolution": _resolution(d, eid, {eid: row})}
+
+
 @app.post("/api/emails/{eid}/action")
 def record(eid: str, body: Action, ds: str = "demo"):
     d = ds_of(ds)
     if eid not in d.loader.get_email_ids():
         raise HTTPException(404, "email not found")
-    ref = eid if d.id == "demo" else f"{d.id}:{eid}"
+    ref = _ledger_ref(d, eid)
     block = ledger.record_action(body.actor, ref, body.action, body.details)
+    if body.action == "AMENDMENT_CONFIRMED":
+        outbox.set_status(d.id, eid, "confirmed")
     if body.action in ("CONFIRM_AI_RESULT", "OVERRIDE_RESULT", "AMENDMENT_DISPATCHED", "AMENDMENT_CONFIRMED"):
         d.overrides[eid] = {"action": body.action, "at": datetime.utcnow().isoformat() + "Z", "block": block["index"], **body.details}
     return {"block": block}
@@ -386,7 +523,7 @@ def copilot(q: str, ds: str = "demo"):
         return {"kind": "review", "shipment": r["shipment"], "email": eid, "reason": r["review_reason"], "confidence": r["confidence"], "recommendation": rec}
     if not bad:
         return {"kind": "clear", "shipment": r["shipment"], "email": eid, "message": "No mismatch detected. All seven fields match between SI and draft BL."}
-    return {"kind": "mismatch", "shipment": r["shipment"], "email": eid, "issues": bad, "evidence": r["attachments"], "recommendation": "Request corrected draft BL from carrier."}
+    return {"kind": "mismatch", "shipment": r["shipment"], "email": eid, "issues": bad, "evidence": r["attachments"], "recommendation": "Request a corrected draft BL from the sender."}
 
 
 # ---------------------------------------------------------------- dataset import
@@ -398,6 +535,7 @@ def _process(d: Dataset) -> None:
         if r.get("error"):
             d.job["failed"].append({"id": eid, "error": r["error"]})
         d.job["done"] += 1
+    ensure_amendments(d)
     d.job["status"] = "ready"
 
 

@@ -74,7 +74,7 @@ export default function Overview({ go }: { go: (p: Page, id?: string, auto?: boo
         </Panel>
 
         <Panel className="p-5">
-          <SectionTitle eyebrow="Attention" title="Open items" right={<button onClick={() => go('discrepancies')} className="text-xs text-ink3 transition hover:text-ink">View queue →</button>} />
+          <SectionTitle eyebrow="Attention" title="Open items" right={<button onClick={() => go('cases')} className="text-xs text-ink3 transition hover:text-ink">View cases →</button>} />
           <motion.div variants={stagger} initial="hidden" animate="show" className="divide-y divide-white/[0.06]">
             {top.map((e) => (
               <motion.button key={e.id} variants={rise} onClick={() => go('verification', e.id)} className="group flex w-full items-center gap-4 py-3 text-left">

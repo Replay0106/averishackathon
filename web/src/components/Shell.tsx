@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Activity, BarChart3, Bot, CheckCircle2, ChevronRight, FileSearch, Gauge, GitCompareArrows, History, Inbox, Map, FolderPlus, RadioTower, Search, Send, Settings, ShieldCheck, Sparkles, type LucideIcon,
+  Activity, BarChart3, Bot, CheckCircle2, ChevronRight, FileSearch, Gauge, GitCompareArrows, History, Inbox, Map, FolderPlus, RadioTower, Search, Settings, ShieldCheck, Sparkles, type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { LogoMark, Wordmark } from './Logo'
@@ -14,9 +14,8 @@ const MAIN: { page: Page; label: string; icon: LucideIcon }[] = [
   { page: 'overview', label: 'Overview', icon: Gauge },
   { page: 'inbox', label: 'Inbox Triage', icon: Inbox },
   { page: 'verification', label: 'Document Verification', icon: FileSearch },
-  { page: 'discrepancies', label: 'Discrepancy Queue', icon: GitCompareArrows },
+  { page: 'cases', label: 'Cases', icon: GitCompareArrows },
   { page: 'compliance', label: 'Compliance Gate', icon: ShieldCheck },
-  { page: 'carrier', label: 'Carrier Actions', icon: Send },
   { page: 'analytics', label: 'Analytics', icon: BarChart3 },
   { page: 'audit', label: 'Audit Trail', icon: History },
   { page: 'gateway', label: 'Trust Gateway', icon: RadioTower },
@@ -46,8 +45,9 @@ function NavItem({ active, label, icon: Icon, onClick, id, badge }: { active: bo
 }
 
 export function Sidebar({ page, go, onHealth }: { page: Page; go: (p: Page) => void; onHealth: () => void }) {
-  const { summary } = useApp()
-  const flagged = summary ? summary.mismatch + summary.needs_review : 0
+  const { emails, resolutions } = useApp()
+  // cases waiting for a person: flagged comparisons with no automatic amendment and no decision yet
+  const flagged = emails.filter((e) => e.category === 'BL_COMPARISON' && e.status !== 'OK' && !e.amendment && !resolutions[e.id]).length
   return (
     <aside className="fixed inset-y-0 left-0 z-30 flex w-[68px] flex-col border-r border-white/[0.07] bg-[#0a0f1d] px-3 py-4 lg:w-[248px]">
       <button onClick={() => go('overview')} className="mb-6 flex items-center gap-3 px-1.5">
@@ -64,7 +64,7 @@ export function Sidebar({ page, go, onHealth }: { page: Page; go: (p: Page) => v
             label={n.label}
             icon={n.icon}
             onClick={() => go(n.page)}
-            badge={n.page === 'discrepancies' ? flagged : undefined}
+            badge={n.page === 'cases' ? flagged : undefined}
           />
         ))}
       </nav>
@@ -160,7 +160,7 @@ export function CommandPalette({ open, onClose, go, onImport }: { open: boolean;
     () => [
       { id: 'c1', group: 'Commands', label: 'Search shipment', hint: 'Type a SHP- id', icon: Search, run: () => setQ('SHP-') },
       { id: 'c2', group: 'Commands', label: 'Search email', hint: 'Open inbox triage', icon: Inbox, run: () => go('inbox') },
-      { id: 'c3', group: 'Commands', label: 'Open discrepancy queue', hint: 'Go to', icon: GitCompareArrows, run: () => go('discrepancies') },
+      { id: 'c3', group: 'Commands', label: 'Open cases', hint: 'Go to', icon: GitCompareArrows, run: () => go('cases') },
       { id: 'c4', group: 'Commands', label: 'Verify document', hint: 'Run live verification', icon: FileSearch, run: () => go('verification', hero, true) },
       { id: 'c10', group: 'Commands', label: 'Import folder', hint: 'Emails + attachments', icon: FolderPlus, run: onImport },
       { id: 'c5', group: 'Commands', label: 'Ask Navis', hint: 'Open copilot', icon: Sparkles, run: () => go('copilot') },

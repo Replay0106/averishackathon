@@ -38,7 +38,7 @@ function Answer({ a, go }: { a: CopilotReply; go: (p: Page, id?: string, auto?: 
         <Block i={4} label="Reasoning"><span className="text-ink2"><Typewriter text={explain(first)} speed={9} /></span></Block>
         <Block i={5} label="Recommendation" tone="info">{a.recommendation}</Block>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.4 }} className="flex gap-2 pt-1">
-          <Button size="sm" variant="primary" onClick={() => go('carrier', a.email)}>Prepare amendment</Button>
+          <Button size="sm" variant="primary" onClick={() => go('cases', a.email)}>Open case</Button>
           <Button size="sm" onClick={() => go('verification', a.email, true)}>Replay verification</Button>
         </motion.div>
       </div>
@@ -50,7 +50,7 @@ function Answer({ a, go }: { a: CopilotReply; go: (p: Page, id?: string, auto?: 
         <Block i={0} label="Issue">{REASON_LABEL[a.reason as keyof typeof REASON_LABEL] ?? a.reason}</Block>
         <Block i={1} label="Confidence">{Math.round((a.confidence ?? 0) * 100)}% — below the automation threshold</Block>
         <Block i={2} label="Recommendation" tone="info">{a.recommendation}</Block>
-        <div className="pt-1"><Button size="sm" onClick={() => go('discrepancies')}>Open review queue</Button></div>
+        <div className="pt-1"><Button size="sm" onClick={() => go('cases')}>Open cases</Button></div>
       </div>
     )
   if (a.kind === 'clear')
