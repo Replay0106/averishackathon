@@ -88,6 +88,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [feed, setFeed] = useState<FeedEvent[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
   const details = useRef<Record<string, EmailDetail>>({})
+  const simulatedEmails = useRef<Record<string, EmailRow>>({})
   const local = useRef<AuditBlock[]>([])
   const seq = useRef(1)
 
@@ -113,14 +114,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const [list, sum] = await Promise.all([api<EmailRow[]>(withDs('/api/emails')), api<Summary>(withDs('/api/summary'))])
       if (!alive) return
       if (list && sum) {
-        setEmails(list)
+        const ids = new Set(list.map((e) => e.id))
+        const extraSims = Object.values(simulatedEmails.current).filter((e) => !ids.has(e.id))
+        const mergedList = [...extraSims, ...list]
+        setEmails(mergedList)
         setSummary(sum)
         setLive(true)
-        setRes(Object.fromEntries(list.filter((e) => e.resolution).map((e) => [e.id, e.resolution as Resolution])))
+        setRes(Object.fromEntries(mergedList.filter((e) => e.resolution).map((e) => [e.id, e.resolution as Resolution])))
       } else if (dataset === 'demo') {
         const snap = await loadSnapshot()
         if (!alive) return
-        setEmails(snap.emails)
+        const ids = new Set(snap.emails.map((e) => e.id))
+        const extraSims = Object.values(simulatedEmails.current).filter((e) => !ids.has(e.id))
+        const mergedList = [...extraSims, ...snap.emails]
+        setEmails(mergedList)
         setSummary(snap.summary)
         setLive(false)
         setRes({})
@@ -307,10 +314,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshAudit(),
     ])
     if (list && sum) {
-      setEmails(list)
+      const ids = new Set(list.map((e) => e.id))
+      const extraSims = Object.values(simulatedEmails.current).filter((e) => !ids.has(e.id))
+      const mergedList = [...extraSims, ...list]
+      setEmails(mergedList)
       setSummary(sum)
       setLive(true)
-      setRes(Object.fromEntries(list.filter((e) => e.resolution).map((e) => [e.id, e.resolution as Resolution])))
+      setRes(Object.fromEntries(mergedList.filter((e) => e.resolution).map((e) => [e.id, e.resolution as Resolution])))
     }
   }, [withDs, refreshDatasets, refreshAudit])
 
@@ -322,8 +332,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(opts),
       })
       if (res && res.status === 'ok') {
-        await refreshDatasets()
-        await refresh()
+        if (res.result) {
+          // Pre-populate details cache so getDetail() returns synchronously with zero delay/flicker
+          details.current[res.email_id] = res.result as EmailDetail
+
+          const row: EmailRow = {
+            id: res.result.id,
+            shipment: res.result.shipment,
+            sender: res.result.sender,
+            subject: res.result.subject,
+            category: res.result.category,
+            status: res.result.status,
+            review_reason: res.result.review_reason,
+            defect_fields: res.result.defect_fields || [],
+            confidence: res.result.confidence,
+            attachments: res.result.attachments || [],
+            meta: res.result.meta || { booking: null, vessel: null, oc_no: null, carrier: 'Unassigned' },
+            resolution: res.result.resolution || null,
+            amendment: res.result.amendment || null,
+            case: res.result.case || null,
+          }
+          simulatedEmails.current[res.email_id] = row
+
+          // Immediately prepend to emails state
+          setEmails((prev) => [row, ...prev.filter((e) => e.id !== res.email_id)])
+        }
+
+        // Background sync to refresh counters and audit ledger without blocking or losing the simulated row
+        refreshDatasets().catch(() => {})
+        refresh().catch(() => {})
+
         return res
       }
       return null

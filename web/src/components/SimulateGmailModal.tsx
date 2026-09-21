@@ -106,10 +106,10 @@ export function SimulateGmailModal({ open, onClose, onSimulated }: SimulateGmail
           body: `${preset.title} processed & verified via autonomous pipeline.`,
           tone: preset.tone === 'bad' ? 'warn' : 'ok',
         })
-        onClose()
         if (onSimulated) {
           onSimulated(res.email_id)
         }
+        onClose()
       } else {
         toast({
           title: 'Simulation Failed',

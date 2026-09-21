@@ -68,8 +68,12 @@ class InboxLoader:
     def get_email_ids(self) -> List[str]:
         files = sorted(self.inbox_dir.glob("*.json")) if self.inbox_dir.is_dir() else []
         file_ids = [f.stem for f in files]
-        # Injected emails appear first in reverse order (newest simulated first)
-        injected = list(reversed(list(self.injected_emails.keys())))
+        # Injected emails appear first sorted in descending order (highest counter/newest first)
+        def _sort_key(eid: str):
+            digits = re.findall(r"\d+", eid)
+            return int(digits[-1]) if digits else 0
+
+        injected = sorted(self.injected_emails.keys(), key=_sort_key, reverse=True)
         return injected + [fid for fid in file_ids if fid not in self.injected_emails]
 
     def load_emails(self) -> List[Dict[str, Any]]:
