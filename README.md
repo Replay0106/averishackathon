@@ -1,312 +1,393 @@
-# 🚢 NavisAI | Autonomous Shipping Documentation & Trade Compliance Copilot
+# NavisAI
 
-[![Tests](https://img.shields.io/badge/Tests-71%2F71%20Passing%20(100%25)-10B981?style=for-the-badge&logo=pytest)](run_tests.py)
-[![Benchmark Parity](https://img.shields.io/badge/Benchmark%20Parity-100%25%20Exact%20Match-059669?style=for-the-badge)](submission.json)
-[![Processing Speed](https://img.shields.io/badge/Throughput-0.001s%20%2F%20msg-0284C7?style=for-the-badge)](sdoc_pipeline.py)
-[![AI Engine](https://img.shields.io/badge/Google%20Gemini-3.5%20%2F%203.7%20Flash-8B5CF6?style=for-the-badge&logo=google)](https://ai.google.dev/)
-[![Audit Ledger](https://img.shields.io/badge/Audit%20Ledger-SHA--256%20Hash%20Chained-0F172A?style=for-the-badge)](audit_ledger.json)
+**AI-assisted shipping-document verification for container-shipping operations.** NavisAI reads a shared operations inbox, finds the Shipping Instruction (SI) and draft Bill of Lading (BL) in each request, extracts seven shipment fields, compares the two, explains every difference with its source lines, asks the sender to fix what is wrong, and sends anything it cannot decide to a person. Every action is written to a tamper-evident audit ledger.
 
-> **Autonomous trade documentation compliance and discrepancy resolution copilot engineered for high-volume ocean freight operations and Global Business Services (GBS) teams (e.g. Averis GBS, managing global commodity exports like palm oil and pulp & paper).**
+Built for the Averis x Monash Hackathon 2026.
 
----
+> **Design principle: do not guess.** A missing, unreadable, duplicated or conflicting value is never filled in. The case goes to human review with a named reason.
 
-## 📑 Table of Contents
-1. [Overview & Value Proposition](#1-overview--value-proposition)
-2. [End-to-End System Architecture](#2-end-to-end-system-architecture)
-3. [Autonomous Intelligence Engines](#3-autonomous-intelligence-engines)
-4. [Dual-Interface Ecosystem](#4-dual-interface-ecosystem)
-5. [Benchmark Edge-Case Verification](#5-benchmark-edge-case-verification)
-6. [Automated Regression Test Suite](#6-automated-regression-test-suite)
-7. [Quickstart & Execution Guide](#7-quickstart--execution-guide)
-8. [Cybersecurity & Compliance Standards](#8-cybersecurity--compliance-standards)
+[Features](#1-features) · [Architecture](#2-system-architecture) · [How it works](#3-how-the-engines-work) · [Results](#4-measured-results) · [Run it](#5-how-to-run-navisai) · [API](#6-api-reference) · [Repo layout](#7-repository-layout) · [Security and limits](#8-security-data-handling-and-limits) · [More docs](#9-further-documentation)
 
 ---
 
-## 1. Overview & Value Proposition
+## 1. Features
 
-In international trade, high-volume shippers handle hundreds of operational emails and shipping manifests daily. Documentary non-conformity under **ICC UCP 600 rules** or **IMO SOLAS VGM regulations** causes severe disruptions:
-* **Liquidity Freezes**: Bank rejection of Letters of Credit (LC) holding up to **$500,000** per shipment.
-* **Demurrage & Detention**: Port dwell penalties accumulating at **$150–$350/container/day**.
-* **Carrier Manifest Cut-Off Delays**: Missed vessel departures when draft B/L amendments are not reconciled in time.
+### The problem it solves
 
-**NavisAI eliminates manual swivel-chair auditing**, replacing slow human spot-checks with an autonomous, high-throughput pipeline that ingests operational emails, extracts 7 canonical shipping fields, detects discrepancies with line-level forensic provenance, reconciles revisions across temporal threads, calculates financial risk, and executes closed-loop carrier amendments and client notices.
+Shipping-documentation teams receive mixed emails all day: requests to check an SI against a draft BL, requests for a new SI, invoice questions, operational updates and spam. Checking an SI against a BL by hand is repetitive, and a wrong port, weight or consignee that slips through causes amendments, delays and disputes. NavisAI removes the repetitive checking and keeps people on the exceptions.
 
-### 📊 Quantified Operational Impact
-| Metric | Legacy Manual / RPA Process | NavisAI Autonomous Copilot | Operational Delta |
-|---|---|---|---|
-| **Audit Latency** | 30–45 minutes per shipment | **0.001s / email** (<0.6s for 520 emails) | **99.9% faster** |
-| **Discrepancy Resolution** | 2–3 business days via manual email | **Instant 1-Click** EDI Push / Notice | **Real-time (<1 min)** |
-| **Scanned Document Handling** | Fails or requires manual re-keying | **Multimodal PDF Vision AI** (Gemini 3.5 Flash) | **Zero human re-keying** |
-| **Multi-Turn Revision Lineage** | Overwrites context; false flags | **Consensus Engine** (Zombie Suppression) | **Zero false alarms** |
-| **Audit Traceability** | Disconnected spreadsheets | **SHA-256 hash-chained audit log** | **Tamper-evident (not certified)** |
+### Feature overview
+
+| Area | What it does |
+|---|---|
+| **Email triage** | Sorts every email into `BL_COMPARISON`, `SI_REQUEST`, `INVOICE_QUERY`, `GENERAL` or `SPAM` with deterministic rules and intent patterns (no model call). |
+| **Document identification** | Finds the SI and the draft BL among the attachments by file name and content. Wrong document, missing attachment and a second copy of the BL are detected. |
+| **Field extraction** | Reads seven fields from text, PDF, Word and Excel attachments with regular expressions. Scanned PDFs are read with Gemini vision, and only those. |
+| **Comparison** | Compares SI against BL on shipper, consignee, notify party, port of loading, port of discharge, container count and gross weight, with normalisation for legal suffixes, port aliases, units and "same as consignee". |
+| **Explainability** | Every field keeps its source line number and text snippet; the redline view shows SI value, BL value, the difference and the reason. |
+| **Human review** | Anything the system cannot decide is escalated as `NEEDS_REVIEW` with one of four reasons: `missing_attachment`, `wrong_doc_type`, `unreadable`, `missing_value`. |
+| **Automatic amendment requests** | A mismatch on any of the seven fields is turned into an amendment email to the original sender and recorded, without a person clicking send. Review cases get a one-click "Send amendment to sender". |
+| **Cases workspace** | One page for everything that was flagged: Needs a person, Sent, Awaiting reply, Resolved. |
+| **Trust Gateway** | A ten-gate intake pipeline that scores each sender domain, holds a single document mismatch for corroboration, and commits accepted emails to a Merkle-proof ledger. |
+| **Audit trail** | A SHA-256 hash-chained ledger of every automatic and human action, with an integrity check. |
+| **Compliance Gate** | A pre-release checklist per shipment: document consistency, weight, containers, dangerous-goods markers, HS-code presence and the sender's gateway verdict. |
+| **Ask Navis** | A copilot that answers questions such as "Why is SHP-2048 flagged?" from the actual verification result. |
+| **Analytics** | Discrepancies by field and carrier, verification volume and auto-resolution rate by batch. |
+| **Folder import** | Import a folder of emails and attachments (bundle layout or `.eml` files) as a separate dataset and switch between datasets. |
+| **Gmail** | Live inbox listener over OAuth, plus a one-click **Simulate Inbound Gmail** that needs no Google credentials. |
+| **Persistence** | With Supabase configured, documents, the ledger, the amendment outbox and decisions survive restarts and redeploys (required on Vercel). Without it, local files are used. |
+
+### The web app
+
+| Page | Purpose |
+|---|---|
+| **Overview** | KPIs, live pipeline, open items, activity feed. |
+| **Inbox Triage** | The classified inbox with filters; select an email to see its documents. |
+| **Document Verification** | Animated SI-to-BL run: extraction, side-by-side comparison, redline, evidence, decision. |
+| **Cases** | Flagged shipments in four tabs. The drawer shows the amendment email that was sent, the evidence, and the actions (Send amendment to sender, Override result, Corrected document received). |
+| **Compliance Gate** | Seven pass/fail checks and a release verdict for one shipment. |
+| **Analytics** | Discrepancies by field and by carrier, verification volume and auto-resolution rate by batch. |
+| **Audit Trail** | The hash-chained ledger with a verify control. |
+| **Trust Gateway** | Sender trust scores, the ten gates, the event log, and Merkle receipts you can verify. |
+| **Ask Navis** | The copilot. |
+| **Roadmap** | The product roadmap, 2026 to 2030. |
+| **Settings** | Workspace information and the system health panel. |
+
+Press **Ctrl+K** for the command palette. If the API is unreachable the demo inbox falls back to an embedded snapshot.
+
+A legacy **Streamlit cockpit** (`app.py`) is also included. The web app is the primary interface.
 
 ---
 
-## 2. End-to-End System Architecture
+## 2. System architecture
+
+### 2.1 Components
+
+```mermaid
+flowchart LR
+    subgraph Clients
+        WEB["Web app<br/>React 19 + Vite + TypeScript"]
+        ST["Streamlit cockpit<br/>app.py (legacy)"]
+        CLI["Batch CLI<br/>sdoc_pipeline.py"]
+    end
+
+    subgraph API["FastAPI service (api/)"]
+        ROUTES["Routes: emails, datasets, audit,<br/>copilot, gateway, gmail, storage"]
+        AMEND["Amendment policy + outbox<br/>sdoc_amendment.py"]
+    end
+
+    subgraph Engines["Verification engines (sdoc_*.py)"]
+        LOAD["loader"] --> CLS["classifier"]
+        CLS --> EXT["extractor"]
+        EXT --> REC["reconciler"]
+        REC --> RISK["risk / SLA / consensus"]
+    end
+
+    subgraph Security["Security"]
+        GW["Trust Gateway<br/>sdoc_gateway.py + security_layer/"]
+        LEDGER["Audit ledger<br/>SHA-256 hash chain"]
+    end
+
+    subgraph External
+        GEM["Google Gemini<br/>scanned PDFs only"]
+        GMAIL["Gmail API<br/>live inbox"]
+    end
+
+    subgraph Storage["Storage"]
+        LOCAL["Local files<br/>datasets/, audit_ledger.json, .cache/"]
+        SUPA["Supabase<br/>Postgres tables + private bucket"]
+    end
+
+    WEB --> ROUTES
+    ST --> Engines
+    CLI --> Engines
+    ROUTES --> Engines
+    ROUTES --> AMEND
+    ROUTES --> GW
+    AMEND --> LEDGER
+    ROUTES --> LEDGER
+    EXT -. "vision, only when text cannot be read" .-> GEM
+    ROUTES <--> GMAIL
+    ROUTES --> LOCAL
+    ROUTES -. "when SUPABASE_URL and key are set" .-> SUPA
+```
+
+### 2.2 The verification pipeline
 
 ```mermaid
 flowchart TD
-    subgraph Ingestion ["Stage 1: Multi-Format Ingestion & Triage"]
-        GMAIL["✉️ Real Gmail Inbox (OAuth2 API)"] --> WATCHER["gmail_watcher.py<br/>HistoryId Delta Sync & MIME Parser"]
-        WATCHER --> INBOX["📥 Operational Inbox (Datasets)"]
-        INBOX --> LOADER["sdoc_loader.py<br/>Multi-Format (.txt, .pdf, .docx, .xlsx)"]
-        LOADER --> CLASS["sdoc_classifier.py<br/>Deterministic Regex Engine"]
-        CLASS --> |Categorize in <0.05s| CATS["BL_COMPARISON (220)<br/>SI_REQUEST (132)<br/>INVOICE_QUERY (75)<br/>GENERAL (53)<br/>SPAM (40)"]
-    end
-
-    subgraph Extraction ["Stage 2: Multimodal Extraction & Forensic Evidence Trace"]
-        CATS --> |BL_COMPARISON| EXTRACT["sdoc_extractor.py<br/>7 Canonical Field Extractor"]
-        EXTRACT --> SELECTABLE["Selectable Text Parser<br/>Header/Colon Boundary Matching"]
-        EXTRACT --> FORENSIC["📍 Forensic Source Tracing<br/>(1-Indexed Line # & Text Snippet)"]
-        EXTRACT --> VISION["Multimodal PDF Vision AI<br/>Gemini 3.5 Flash + Offline Ground Truth"]
-    end
-
-    subgraph Intelligence ["Stage 3: Normalization, Consensus & Risk Engines"]
-        EXTRACT --> RECON["sdoc_reconciler.py<br/>Document Reconciler & Normalizer"]
-        RECON --> CONSENSUS["sdoc_consensus.py<br/>Temporal Consensus Engine<br/>(Suppresses Zombie Discrepancies)"]
-        RECON --> RISK["sdoc_risk.py<br/>Financial & Demurrage Risk Engine<br/>(UCP 600 Art. 14 / IMO SOLAS VGM)"]
-        RECON --> SLA["sdoc_sla.py<br/>Vessel Cut-Off SLA Prioritizer<br/>(Emergency <6h / Urgent <24h)"]
-    end
-
-    subgraph SecurityOutput ["Stage 4: Zero-Trust Security, Closed-Loop Dispatch & HITL"]
-        RECON & RISK & SLA --> SEC["sdoc_security.py<br/>SPF/DKIM Spoofing Guard & PDF Sandbox<br/>⛓️ SHA-256 Tamper-Evident Ledger"]
-        SEC --> MONITOR["sdoc_monitor.py<br/>Autonomous Inbox Watcher<br/>✉️ Client Rectification Notice Dispatch"]
-        MONITOR --> JSON["📄 submission.json<br/>(100% Parity with sample_submission.json)"]
-        JSON --> UI_STREAMLIT["🖥️ Streamlit Enterprise Cockpit<br/>(6 Averis Institutional Workspaces)"]
-        JSON --> UI_WEB["🌐 React 18 + Vite Web App<br/>+ FastAPI Backend Service"]
-    end
+    A["Email + attachments"] --> C{"Classify<br/>rules, no LLM"}
+    C -->|SPAM / GENERAL / INVOICE_QUERY / SI_REQUEST| F["Filed"]
+    C -->|BL_COMPARISON| D["Select SI and draft BL<br/>missing, wrong type, duplicate copy"]
+    D --> E["Extract 7 fields<br/>regex first; Gemini vision only for scans"]
+    E --> G["Validate<br/>placeholders, conflicting values, legibility"]
+    G --> H{"Reconcile SI vs BL<br/>normalised, deterministic"}
+    H -->|all match| OK["OK"]
+    H -->|difference| MM["MISMATCH<br/>with SI value, BL value, evidence"]
+    H -->|cannot decide| NR["NEEDS_REVIEW<br/>named reason"]
+    MM --> B["Trust Gateway verdict on the sender<br/>10 gates, some use the extraction result"]
+    B --> P{"Amendment policy"}
+    P -->|sender may be contacted| AUTO["Amendment email to sender<br/>outbox record + ledger entry"]
+    P -->|sender rejected or no address| NR
+    NR --> HUM["Cases: person decides<br/>Send amendment / Override"]
+    AUTO --> WAIT["Awaiting corrected document"]
+    HUM --> LED["Audit ledger"]
+    AUTO --> LED
+    OK --> COMP["Compliance Gate"]
 ```
 
----
+### 2.3 Deployment and persistence
 
-## 3. Autonomous Intelligence Engines
-
-### 3.1 Multi-Format Ingestion & Classification (`sdoc_loader.py`, `sdoc_classifier.py`)
-- Ingests `.txt`, `.pdf`, `.docx`, and `.xlsx` payloads.
-- Gracefully traps corrupt PDF byte streams (`email_511`, `email_515`) without crashing.
-- Categorizes all 520 emails into 5 distinct operational intents in `<0.05 seconds`:
-  - `BL_COMPARISON`: Comparison between Shipping Instructions (SI) and Draft Bill of Lading (BL).
-  - `SI_REQUEST`: Inquiries requesting initial shipping instructions.
-  - `INVOICE_QUERY`: Freight invoice queries and payment confirmations.
-  - `GENERAL`: Sailing schedules, port ETAs, and vessel updates.
-  - `SPAM`: Commercial solicitations and non-operational traffic.
-
-### 3.2 7 Canonical Fields Extractor & Vision AI (`sdoc_extractor.py`)
-- Extracts the 7 canonical international trade fields:
-  1. `shipper` (Shipper / Exporter)
-  2. `consignee` (Consignee / To Order of)
-  3. `notify_party` (Notify Party)
-  4. `port_of_loading` (Port of Loading - POL)
-  5. `port_of_discharge` (Port of Discharge - POD)
-  6. `container_count` (Container Count)
-  7. `gross_weight_kg` (Gross Cargo Weight in KG)
-- **Forensic Line Provenance**: Every extracted field includes exact 1-indexed source line numbers and contextual snippets (e.g. `📍 Line 14: "Total Gross Weight: 24,500 KGS"`).
-- **Multimodal PDF Vision AI**: Processes image-only scanned PDFs (`email_512`–`514`) using Gemini Vision (`gemini-3.5-flash`), backed by a deterministic safety cache for offline evaluation.
-
-### 3.3 Semantic Reconciler & Normalizer (`sdoc_reconciler.py`)
-- Normalizes corporate legal suffixes (`Bhd`, `Sdn Bhd`, `Pte Ltd`, `LLC`, `GmbH`).
-- Resolves port variations and casing disparities (`PORT KLANG` vs `Port Kelang`).
-- Parses numeric quantities and weights with unit conversion (MT, LBS, KGS).
-
-### 3.4 Temporal Consensus Engine (`sdoc_consensus.py`)
-- Thread clustering by Booking Reference, B/L Number, and Vessel/Voyage.
-- Tracks document revision lineage across multi-turn email exchanges (`Draft v1` ➔ `Draft v2` ➔ `Final`).
-- **Zombie Discrepancy Suppression**: Automatically clears historical defects that were resolved in subsequent carrier revisions.
-
-### 3.5 Financial Demurrage & Statutory Risk Engine (`sdoc_risk.py`)
-- **Demurrage Calculator**: Computes financial liability based on container count and daily demurrage rates ($	ext{Containers} 	imes \$250/	ext{day} 	imes 3	ext{ dwell days}$).
-- **Statutory Rules Audited**:
-  - **ICC UCP 600 Art. 14(d)**: Title entity mismatches triggering bank payment refusal.
-  - **IMO SOLAS Chapter VI (VGM)**: Weight variance $> \pm 1,000	ext{ kg}$ or $> 5\%$ violating maritime safety loading rules.
-
-### 3.6 Vessel Cut-Off SLA Prioritizer (`sdoc_sla.py`)
-- Extracts vessel name, voyage number, and carrier gate cut-off deadlines.
-- Ranks triage queue by urgency: 🔴 **EMERGENCY (<6h)**, 🟠 **URGENT (<24h)**, 🟡 **STANDARD (<48h)**, 🟢 **ROUTINE (>48h)**.
-
-### 3.7 Zero-Trust Cybersecurity & Audit Ledger (`sdoc_security.py`)
-- **Sender heuristics**: Flags throwaway domains and carrier display-name impersonation. It does not validate SPF, DKIM or DMARC headers.
-- **Malicious Attachment Sandbox**: Scans PDF streams for `/JavaScript`, `/Launch`, `/EmbeddedFiles`.
-- **PII & Rate Masking**: Redacts IBANs, bank accounts, and confidential freight rates.
-- **SHA-256 Tamper-Evident Audit Ledger**: Hash-chains every extraction, human approval, and dispatch action (`audit_ledger.json`).
-
-### 3.8 Continuous Inbox Watcher & Client Rectification (`sdoc_monitor.py`)
-- Monitors folder for incoming emails in real-time.
-- Automatically composes formal client discrepancy rectification notices with booking details, cut-off countdown, and side-by-side mismatch comparison.
-- Provides 1-click dispatch logging into `submission.json` and the audit ledger.
-
-### 3.9 Autonomous Gmail Live Inbox Listener & Simulation Mode (`gmail_watcher.py`, `api/gmail_ingest.py`)
-- **Zero-Shortcuts First-Principles Integration**: Directly connects to Google Cloud Gmail API v1 via OAuth 2.0 Desktop flow (`credentials.json` + `token.json`) using official Google client libraries.
-- **High-Throughput Delta Synchronization**: Uses Gmail's `users.history.list` and persistent `historyId` checkpoints (`gmail_state.json`) to ingest only newly arrived messages without performing expensive full mailbox re-scans.
-- **RFC 2822 & Multi-Part MIME Recursive Parser**: Automatically decodes nested MIME structures (`multipart/mixed`, `multipart/alternative`, `multipart/related`), extracts headers (`Subject`, `From`, `Date`), strips dangerous `<script>` tags and HTML formatting, and normalizes email bodies.
-- **Secure Multi-Format Attachment Ingestion**:
-  - Unpacks base64url attachment payloads into native pipeline layout (`inbox/{email_id}.json` and `attachments/{email_id}_{file}`).
-  - Enforces strict safety limits: 50MB per-attachment cap, max 20 attachments per email, and path-traversal sanitization against directory traversal (`../`).
-  - Automatically identifies whether attachments are Shipping Instructions (`SI`) or Bills of Lading (`BL`) based on content and filename heuristics.
-- **Targeted Inbox & Query Filtering**: Supports listening to specific email addresses or custom Gmail search queries (`--query "to:trade-ops@domain.com"` or `--label "SHIPPING"`).
-- **1-Click Judge Simulation (Zero Google Credentials Required)**:
-  - **In-UI Simulation Modal**: Click `[ ⚡ Simulate Inbound Gmail ]` in the Web Inbox to trigger 3 real-world presets (Clean 7/7 Match, Discrepancy Flag, or NLP Intent Triage).
-  - **Direct REST Simulation**: `POST /api/gmail/simulate` generates RFC 2822 payloads, unrolls attachments, runs the 7-field compliance checks, and creates immutable audit ledger blocks in <0.05s.
-  - **CLI Simulation**: Run `python gmail_watcher.py --simulate [--discrepancy] --trigger-pipeline`.
-- **Dual Operating Modes**:
-  - **Autonomous CLI Daemon**: Standalone background poller with `--watch --interval 30 --trigger-pipeline` that automatically triggers the verification pipeline when new emails land.
-  - **FastAPI Background Worker**: REST service daemon running in a background thread (`POST /api/gmail/start`, `POST /api/gmail/stop`, `GET /api/gmail/status`, `POST /api/gmail/poll`).
-
----
-
-## 4. Dual-Interface Ecosystem
-
-NavisAI provides two production-grade user interfaces suited for both enterprise executive oversight and developer integrations:
-
-### Interface A: Streamlit Enterprise Cockpit (`app.py`)
-Engineered with **Averis institutional branding** (Deep Emerald `#059669`, Mint `#10B981`, Dark Slate `#0B1120`, and monospaced tabular numerals):
-1. **📊 Executive Command Center**: Macro KPI cards (520 Ingested, 87.9% Match, $84,500 Demurrage Mitigated), Intent distribution bars, Discrepancy drivers, Urgent SLA Cut-off queue (<24h).
-2. **📥 Operational Inbox Triage**: High-density operational data grid with category/status filters, real-time SLA cut-off badges, and demurrage exposure figures.
-3. **🔍 Dual-Sheet Document Replicas**: Side-by-side paper replicas (`.doc-sheet-si` in Mint vs `.doc-sheet-bl` in Crimson), 7 canonical fields with strikethrough redlines, forensic line provenance chips (`📍 Line X: "..."`), 1-Click Carrier Auto-Amendment, and Client Rectification Notice composer.
-4. **🛡️ 4-Step Guided HITL Resolution Desk**:
-   - *Step 1: Incident Diagnosis & Statutory Risk* (failure mode & demurrage risk).
-   - *Step 2: Source Evidence & Inline Field Corrections* (editable overrides with notes).
-   - *Step 3: Rapid Auditor Decision Bar* (`✅ Approve`, `🔄 Retry Vision`, `✉️ Re-Upload`, `🚩 Escalate`).
-   - *Step 4: Cryptographic Audit Seal* (UTC timestamped, SHA-256 sealed).
-5. **🔒 Cybersecurity & Cryptographic Audit Ledger**: Forwarder SPF/DKIM badge, attachment sandbox status, interactive `"🔍 Verify Hash Chain"` integrity tester, and full chronological audit block ledger.
-6. **💬 Ask Navis Copilot**: Grounded conversational AI assistant citing shipment details and ICC UCP 600 banking rules.
-
-### Interface B: Full-Stack React + FastAPI Web Application (`web/` + `api/`)
-- **Backend API (`api/main.py`)**: High-performance FastAPI service with REST endpoints for ingestion, pipeline execution, metrics, audit ledger queries, and real-time Gmail inbox listening (`/api/gmail/*`).
-- **Dataset Importer (`api/importer.py`)**: Secure importer supporting arbitrary folder layouts, zip archives, and custom bundles with path traversal defense.
-- **Frontend Client (`web/`)**: React 19, Vite, TypeScript, Tailwind CSS, Lucide icons, featuring interactive document viewers, live pipeline triggers, discrepancy charts, and **1-click simulated inbound Gmail processing**.
-
----
-
-## 5. Benchmark Edge-Case Verification
-
-The benchmark suite includes 5 deliberate real-world trap clusters. NavisAI handles all 5 with 100% precision:
-
-| Range | Scenario | Triggered Reason / Status | Automated Handling |
-|---|---|---|---|
-| **`email_501`–`505`** | Non-shipping attachments (Commercial Invoices, Packing Lists) | `status: NEEDS_REVIEW`<br/>`review_reason: wrong_doc_type` | Content signature scanner routes disguised documents to auditor desk. |
-| **`email_506`–`510`** | Missing attachments | `status: NEEDS_REVIEW`<br/>`review_reason: missing_attachment` | Attachment count guardrail prevents crashes and flags missing draft. |
-| **`email_511`, `515`** | Corrupted PDF byte streams | `status: NEEDS_REVIEW`<br/>`review_reason: unreadable` | `pypdf` EOF / header corruption safely trapped without pipeline failure. |
-| **`email_512`–`514`** | Scanned image-only PDFs | `status: OK` | Embedded PNG stream extracted and read cleanly via Multimodal Vision AI. |
-| **`email_516`–`520`** | Placeholders (`N/A`, `TBA`, empty lines) | `status: NEEDS_REVIEW`<br/>`review_reason: missing_value` | Boundary pattern recognition detects placeholders in essential fields. |
-
----
-
-## 6. Automated Regression Test Suite
-
-The entire codebase is verified by an automated test suite of **12 test modules and 71 test cases** executed via `run_tests.py`:
-
-```
-======================================================================
-📊 Test Results Summary:
-  Total Tests:  68
-  Passed:       68 (100.0%)
-  Failures:     0
-  Errors:       0
-======================================================================
-✨ All regression tests passed successfully!
+```mermaid
+flowchart LR
+    U["Browser"] --> V["Vercel<br/>static React build + Python function (api/index.py)"]
+    V --> S["Supabase Postgres<br/>ledger, outbox, decisions, vision cache, Gmail state, datasets"]
+    V --> B["Supabase Storage<br/>private bucket navis-documents"]
+    U -. "signed upload URLs: folder parts go straight to storage" .-> B
+    V -. "scanned pages" .-> G["Gemini API"]
 ```
 
-| Test Module | Focus Area | Tests | Status |
-|---|---|:---:|:---:|
-| [`test_classifier.py`](tests/test_classifier.py) | 5 intent category recognition & 520 inbox distribution | 3 | ✅ Pass |
-| [`test_extractor.py`](tests/test_extractor.py) | 7-field extraction, scanned vision, placeholders, non-negotiable labels | 5 | ✅ Pass |
-| [`test_gmail_watcher.py`](tests/test_gmail_watcher.py) | OAuth2 flow, history delta sync, MIME parsing, attachment extraction, doc classification, query filters, state persistence | 28 | ✅ Pass |
-| [`test_import.py`](tests/test_import.py) | Custom bundle importer, layout detection, path traversal security, >1000 file intake | 7 | ✅ Pass |
-| [`test_reconciler.py`](tests/test_reconciler.py) | Clean matches, defect identification, wrong_doc_type, missing_value | 5 | ✅ Pass |
-| [`test_hitl_persistence.py`](tests/test_hitl_persistence.py) | Human approval & lead escalation persistence to `submission.json` | 2 | ✅ Pass |
-| [`test_pipeline.py`](tests/test_pipeline.py) | 520 email batch run, 100% key parity with sample_submission.json | 3 | ✅ Pass |
-| [`test_risk.py`](tests/test_risk.py) | Demurrage calculation, UCP 600 Art. 14, SOLAS VGM compliance | 4 | ✅ Pass |
-| [`test_sla.py`](tests/test_sla.py) | Vessel cutoff extraction, hours-to-cutoff, SLA priority queue | 2 | ✅ Pass |
-| [`test_consensus.py`](tests/test_consensus.py) | Thread clustering, revision lineage, zombie discrepancy suppression | 3 | ✅ Pass |
-| [`test_security.py`](tests/test_security.py) | SPF/DKIM spoofing guard, PDF sandbox, PII masking, SHA-256 ledger | 4 | ✅ Pass |
-| [`test_monitor.py`](tests/test_monitor.py) | Client rectification notice drafting, dispatch & audit logging | 2 | ✅ Pass |
+A serverless host has no durable disk, so with Supabase configured the local disk is only a cache that is rebuilt from the bucket. Imports upload straight from the browser to the bucket (Vercel rejects request bodies above about 4.5 MB), then the API normalises them.
+
+### 2.4 Where data lives
+
+| Data | Without Supabase | With Supabase |
+|---|---|---|
+| Imported folders | `datasets/<id>/` | Zip packs in the private bucket, one row in `navis_datasets` |
+| Emails added later (Gmail, simulation) | `datasets/gmail_live/` | Objects in the bucket |
+| Audit ledger | `audit_ledger.json` | `navis_ledger` (append-only trigger) |
+| Amendment outbox | `.cache/amendments.db` (SQLite) | `navis_amendments` |
+| Reviewer decisions | In memory | `navis_decisions` |
+| Gemini vision reads and call log | `.cache/` | `navis_vision_cache`, `navis_vision_calls` |
+| Gmail watcher state | `gmail_state.json` | `navis_kv` |
+
+The Gmail login files (`credentials.json`, `token.json`) are never stored in Supabase. Setup and limits: [SUPABASE_SETUP.md](SUPABASE_SETUP.md).
 
 ---
 
-## 7. Quickstart & Execution Guide
+## 3. How the engines work
 
-### Prerequisites
-- Python 3.11+
-- Node.js 18+ (optional, for React web client)
-- Google Gemini API Key (set in `.env` for Vision AI fallback)
-- Google Cloud OAuth 2.0 Client Credentials (`credentials.json` for live Gmail listening)
+### 3.1 Classification (`sdoc_classifier.py`)
+A decision list, first match wins: SI and BL attached, then a body asking to compare, then a request to send a draft BL, then spam, invoice, SI-request intent, and finally `GENERAL`. Keyword lists are backed by regular-expression intent patterns so unfamiliar wording is still caught. Nothing is learned and no model is called.
 
-### 1. Clone & Setup Environment
+### 3.2 Loading and extraction (`sdoc_loader.py`, `sdoc_extractor.py`)
+Text, PDF, Word and Excel attachments are parsed and typed by content. Fields are found with label-based patterns that accept `Label: value`, dash and pipe forms, numbered dotted lines, and label variants such as `Party to Notify` and `Equipment`. A field stated twice with different values is a conflict. Image-only PDFs go to Gemini vision (default `gemini-3.6-flash`, override with `GEMINI_MODEL`, with fallbacks); every read is cached by the SHA-256 of the file, and each live call logs latency and tokens. If vision fails the document is marked unreadable and escalated.
+
+### 3.3 Reconciliation (`sdoc_reconciler.py`)
+- Legal suffixes are stripped (`Pte Ltd`, `Sdn Bhd`, `LLC`, `GmbH`, dotted forms).
+- Ports match when one side's city words are contained in the other's, so `JEBEL ALI` equals `JEBEL ALI, UAE`, while `Singapore` and `Singapore Changed` differ.
+- Weights are converted (MT, LBS) and compared with a 0.5 kg tolerance, so a 1 kg difference is reported but rounding noise is not.
+- `SAME AS CONSIGNEE` on the notify party is resolved.
+- Outcomes: `OK`, `MISMATCH` (with the differing fields), `NEEDS_REVIEW` (`missing_attachment`, `wrong_doc_type`, `unreadable`, `missing_value`).
+
+### 3.4 Amendments (`sdoc_amendment.py`)
+A mismatch on any of the seven fields produces an email to the original sender listing each field with its SI and BL value. A sender the Trust Gateway rejected, or a missing sender address, is never contacted. The outbox is keyed by the exact set of differences, so the same amendment is never recorded twice, even across restarts. Review cases get their own wording (missing attachment, wrong document, unreadable file, blank field) through the one-click button in Cases. **Sending is simulated:** an amendment is an outbox record plus a ledger entry, and no email leaves the system.
+
+### 3.5 Trust Gateway (`sdoc_gateway.py`, `security_layer/`)
+The gateway looks at the sender and at the verification result of the email (its last gates use the extraction and comparison outcome). Ten sequential gates, cheapest first: domain rate limit, structural parse, sender trust, correspondence check, authentication heuristics, adaptive rate limit, duplicate check, extraction integrity, discrepancy plausibility, commit. Each sender domain has a continuous trust score. A single mismatch is held for corroboration instead of being flagged as fraud. Accepted emails are committed to a Merkle-proof ledger whose receipts can be verified in the UI.
+
+### 3.6 Other engines
+- **Consensus (`sdoc_consensus.py`)**: links emails by booking, BL number and vessel, and tracks draft revisions.
+- **Risk (`sdoc_risk.py`)**: estimates demurrage and documentary risk from the defects. Its dollar figures rest on assumed constants and are advisory.
+- **SLA (`sdoc_sla.py`)**: extracts vessel cut-offs and ranks the queue by urgency.
+- **Security (`sdoc_security.py`)**: heuristic sender checks (blocklisted domains, carrier display-name impersonation; SPF/DKIM/DMARC are not validated), a PDF token scan, financial-data masking, and the hash-chained ledger.
+
+### 3.7 Confidence
+Field confidence comes from the extraction path (a fixed high value for text extractions, lower with placeholders). Escalation is decided by structural conditions, not by a confidence threshold. Treat the percentage in the UI as a heuristic, not a calibrated probability.
+
+---
+
+## 4. Measured results
+
+| Measure | Result | Source |
+|---|---|---|
+| Official hackathon self-evaluation | 0.9946 (classification accuracy 0.987, defect precision and recall 1.00, end-to-end 46/46) | official scorer |
+| DOCSTRESS set 1 (1,299 emails) | Classification 100%; 260 of 260 SI/BL checks match the expected outcome; 0 real mismatches passed as OK | `answer key.xlsx` |
+| DOCSTRESS set 2 (951 emails) | Classification 100%; 190 of 190 SI/BL checks match | `answer key.xlsx` |
+| Speed, 520-email demo inbox | 0.35 s warm, 4.3 s cold (file reads dominate); no live model calls in the measured run | local benchmark |
+| Model use | 6 of 440 SI/BL documents (1.4%) needed Gemini vision | local benchmark |
+| Tests | 137 tests pass under pytest (`run_tests.py`), plus 47 in `security_layer/tests` | test suites |
+
+Both DOCSTRESS sets come from one generator and rules were tuned on the first, so neither is a blind test. See [COMPETITIVE_ADVANTAGE_AUDIT.md](COMPETITIVE_ADVANTAGE_AUDIT.md) and [FEATURE_AUDIT.md](FEATURE_AUDIT.md) for the full breakdowns.
+
+---
+
+## 5. How to run NavisAI
+
+### 5.1 Prerequisites
+- Python 3.11 or newer
+- Node.js 18 or newer (for the web app)
+- Optional: a Google Gemini API key (scanned PDFs), a Supabase project (persistence), Google OAuth credentials (live Gmail)
+
+### 5.2 Install
+
 ```bash
 git clone https://github.com/Replay0106/averishackathon.git
 cd averishackathon
 
-# Python virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+# Windows PowerShell:  .\venv\Scripts\Activate.ps1
+# macOS / Linux / Git Bash:  source venv/bin/activate    (Git Bash on Windows: source venv/Scripts/activate)
 pip install -r requirements.txt
 
-# Create .env from template
-cp .env.example .env
-# Edit .env and insert: GEMINI_API_KEY="your-gemini-api-key"
+cd web && npm install && cd ..
+cp .env.example .env        # Windows PowerShell: copy .env.example .env
 ```
 
-### 2. Run Automated Regression Test Suite
+### 5.3 Configuration (`.env`)
+
+| Variable | Needed for | Notes |
+|---|---|---|
+| `GEMINI_API_KEY` | Scanned-PDF vision | Optional. Without it, scanned files are escalated as unreadable. `GEMINI_API_KEYS` (comma-separated) and `GEMINI_MODEL` are also read. |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Persistence | Optional. Server-side only; never commit or expose the service-role key. `SUPABASE_BUCKET` defaults to `navis-documents`. |
+| `GMAIL_POLL_INTERVAL_SECONDS`, `GMAIL_LABEL_FILTER` | Live Gmail | Optional. |
+
+`credentials.json` and `token.json` (Gmail OAuth) are git-ignored and stay on your machine.
+
+### 5.4 Run the web app (recommended)
+
+Open two terminals in the project root.
+
 ```bash
-python run_tests.py
+# Terminal 1: API on http://localhost:8000
+python -m uvicorn api.main:app --port 8000
 ```
-Or test the Gmail listener independently:
 ```bash
-python -m pytest tests/test_gmail_watcher.py -v
+# Terminal 2: web app on http://localhost:5173
+cd web
+npm run dev
 ```
 
-### 3. Run Autonomous Batch Pipeline (CLI)
+Open **http://localhost:5173**. The demo inbox (520 emails from `sdoc-hackathon-bundle/`) loads first. Try:
+- **Document Verification** to watch an SI-to-BL comparison.
+- **Cases** to see automatic amendments and the review cases.
+- **Inbox Triage, Simulate Inbound Gmail** to add a clean, mismatching or invoice email.
+- **Import folder** (top bar) to load your own folder and switch between datasets.
+
+To serve the built app from the API alone, run `npm --prefix web run build` and open `http://localhost:8000`.
+
+### 5.5 Run the batch pipeline (CLI)
+
 ```bash
-python sdoc_pipeline.py --bundle "sdoc-hackathon-bundle" --output "submission.json"
+python sdoc_pipeline.py --bundle sdoc-hackathon-bundle --output submission.json
 ```
+Processes every email and writes a `submission.json` in the hackathon's format.
 
-### 4. Run Autonomous Gmail Live Inbox Listener
-```bash
-# 1. Place your OAuth credentials from Google Cloud Console as credentials.json in the project root
+### 5.6 Run the Streamlit cockpit (legacy)
 
-# 2. One-time poll check:
-python gmail_watcher.py --poll-once
-
-# 3. Continuous watcher daemon with auto-pipeline trigger on new arrivals:
-python gmail_watcher.py --watch --interval 15 --trigger-pipeline
-
-# 4. Listen to a specific trade ops email address or query:
-python gmail_watcher.py --watch --query "to:trade-ops@company.com" --trigger-pipeline
-```
-
-#### 📧 Sending Live Demo Emails (`sample_demo_emails/`)
-Ready-to-use email templates and trade attachments are provided in [`sample_demo_emails/`](./sample_demo_emails/):
-1. **Clean Match Demo (`01_clean_match_msc/`)**: Copy `email_template.txt`, attach `MEDU9824101_SI.txt` and `MEDU9824101_Draft_BL.txt`, and send to your demo Gmail address. Result: **100% clean verification (7/7 matched)**.
-2. **Discrepancy Demo (`02_discrepancy_maersk/`)**: Copy `email_template.txt`, attach `MAEU7731201_SI.txt` and `MAEU7731201_Draft_BL.txt`, and send. Result: **Discrepancy alert on gross weight (231,000 kg vs 245,000 kg) & container count**.
-3. **Intent Triage Demo (`03_invoice_query/`)**: Copy `email_template.txt` and send. Result: **Filed under `INVOICE_QUERY` without running document comparison**.
-
-### 5. Launch Streamlit Enterprise Cockpit
 ```bash
 streamlit run app.py --server.port 8502
 ```
-Access the application at: **`http://localhost:8502`**
 
-### 6. Launch FastAPI Backend & React Web Client (Optional)
+### 5.7 Live Gmail (optional)
+
 ```bash
-# Terminal 1: FastAPI Service (includes /api/gmail endpoints)
-python -m uvicorn api.main:app --port 8000 --reload
-
-# Terminal 2: React Vite Web Client
-cd web
-npm install
-npm run dev
+# put credentials.json (Google Cloud OAuth desktop client) in the project root
+python gmail_watcher.py --poll-once
+python gmail_watcher.py --watch --interval 15 --trigger-pipeline
+python gmail_watcher.py --simulate --discrepancy --trigger-pipeline   # no Google credentials needed
 ```
-Access the web application at: **`http://localhost:5173`**
+Ready-made demo emails and attachments are in [`sample_demo_emails/`](sample_demo_emails/). Background polling needs a long-running host; it cannot run on Vercel.
+
+### 5.8 Tests
+
+```bash
+pip install pytest
+python run_tests.py                 # or: python -m pytest tests
+python -m unittest discover -s security_layer/tests -t .
+cd web && npm run typecheck
+```
+The test suite never touches a real Supabase project, even if your keys are in `.env` (set `NAVIS_ALLOW_LIVE_STORE=1` only if you really want that).
+
+### 5.9 Enable Supabase persistence
+
+1. Create a Supabase project and run `supabase/migrations/20260922000000_navis_persistence.sql` in its SQL editor.
+2. Put `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env`.
+3. Check the connection: `python -m sdoc_store --selftest`.
+4. Restart the API. `GET /api/health` should report `"storage": {"backend": "supabase", ...}`.
+
+### 5.10 Deploy to Vercel
+
+The repository is configured for a single Vercel project: `vercel.json` builds the web app and serves the FastAPI app as a Python function (`api/index.py`, dependencies in `api/requirements.txt`).
+
+```bash
+npm i -g vercel
+vercel login
+vercel --prod
+```
+Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and optionally `GEMINI_API_KEY` as project environment variables first. Without Supabase, the deployment has no durable storage. See [DEPLOYMENT.md](DEPLOYMENT.md) and [SUPABASE_SETUP.md](SUPABASE_SETUP.md).
 
 ---
 
-## 8. Cybersecurity & Compliance Standards
+## 6. API reference
 
-- **Data handling (current)**: Uploaded datasets and the audit ledger are stored as plain files on the server, and vision reads of scanned PDFs are cached in `.cache/`. Scanned pages are sent to the Google Gemini API; no data-processing agreement, residency decision or retention policy is in place yet. Not a zero-retention system.
-- **Cryptographic Audit Trail**: All actions (extraction, human corrections, carrier dispatches) are recorded in a SHA-256 hash-chained ledger. Edits to earlier entries are detectable; the ledger is a local file and is not signed, externally anchored or certified against any standard.
-- **Standards posture**: NavisAI is designed with reference to ISO/IEC 42001, ISO/IEC 27001, DCSA, the EU AI Act principles and SOC 2 criteria. It holds **no certification or attestation** against any of them and does not implement DCSA eBL. The risk engine references ICC UCP 600 and IMO SOLAS VGM as advisory context only. See `STANDARDS_ALIGNMENT.md` for the evidence-based assessment.
+| Method and path | Purpose |
+|---|---|
+| `GET /api/health` | Status, ledger integrity, storage backend |
+| `GET /api/emails`, `GET /api/emails/{id}` | Verification results (`?ds=<dataset>` selects a dataset) |
+| `GET /api/summary` | Counts by category and outcome |
+| `POST /api/emails/{id}/send-amendment` | Reviewer sends an amendment or a request for missing documents |
+| `POST /api/emails/{id}/action` | Record a decision (Override, Corrected document received) |
+| `GET /api/audit` | Ledger blocks and integrity |
+| `GET /api/copilot?q=` | Ask Navis |
+| `GET /api/datasets`, `GET/DELETE /api/datasets/{id}` | Dataset list, info, delete |
+| `POST /api/datasets/import` | Folder import through the API (local mode) |
+| `POST /api/datasets/uploads`, `POST /api/datasets/{id}/finalize` | Browser-direct import with Supabase |
+| `GET /api/storage/status` | Tells the web app whether direct upload is available |
+| `GET /api/gateway/state`, `/ledger`, `/email-check/{id}`, `POST /api/gateway/reset` | Trust Gateway |
+| `GET /api/gmail/status`, `POST /api/gmail/simulate`, `/connect`, `/callback`, `/start`, `/stop`, `/poll`, `/disconnect` | Gmail listener and simulation |
+
+Interactive OpenAPI docs are at `http://localhost:8000/docs` when the API runs.
 
 ---
 
-### 🏛️ Averis Hackathon 2026 | Team NavisAI
-Built with passion for autonomous maritime trade compliance and supply chain resilience.
+## 7. Repository layout
+
+| Path | Contents |
+|---|---|
+| `sdoc_loader.py`, `sdoc_classifier.py`, `sdoc_extractor.py`, `sdoc_reconciler.py` | The verification engines |
+| `sdoc_amendment.py` | Amendment policy, message builder, outbox |
+| `sdoc_consensus.py`, `sdoc_risk.py`, `sdoc_sla.py` | Revision lineage, risk estimate, cut-off priority |
+| `sdoc_security.py`, `sdoc_gateway.py`, `security_layer/` | Sender heuristics, audit ledger, the ten-gate Trust Gateway |
+| `sdoc_store.py`, `supabase/migrations/` | Supabase persistence and the SQL that creates it |
+| `sdoc_pipeline.py`, `sdoc_monitor.py`, `gmail_watcher.py` | Batch CLI, folder watcher and rectification notice, Gmail client |
+| `api/` | FastAPI service (`main.py`, `importer.py`, `gateway_routes.py`, `gmail_ingest.py`, `index.py` for Vercel) |
+| `web/` | React web app (`src/pages`, `src/components`, `src/lib`) |
+| `app.py` | Legacy Streamlit cockpit |
+| `sdoc-hackathon-bundle/` | The 520-email demo inbox |
+| `sample_demo_emails/` | Emails and attachments for live Gmail demos |
+| `tests/`, `security_layer/tests/` | Test suites |
+| `vercel.json`, `DEPLOYMENT.md` | Vercel configuration and guide |
+
+---
+
+## 8. Security, data handling and limits
+
+- **Standards posture.** NavisAI is designed with reference to ISO/IEC 42001, ISO/IEC 27001, DCSA, the EU AI Act principles and SOC 2 criteria. It holds **no certification or attestation** against any of them and does not implement DCSA eBL. See [STANDARDS_ALIGNMENT.md](STANDARDS_ALIGNMENT.md) for an evidence-based assessment and its gaps.
+- **No authentication yet.** The API has no login or roles, CORS is open, and the reviewer name is a fixed default. Do not put real customer data on a public deployment until that is added.
+- **Third-party AI.** Scanned pages are sent to the Google Gemini API. There is no data-processing agreement, residency decision or retention policy yet. Text documents are processed locally.
+- **Simulated sending.** Amendment emails are recorded, not sent.
+- **The audit ledger is tamper-evident, not tamper-proof.** It detects edits to earlier entries. Locally it is an unsigned file; on Supabase a trigger blocks updates and deletes. It is not externally anchored or certified.
+- **Secrets.** `.env`, `credentials.json` and `token.json` are git-ignored. The Supabase service-role key must stay server-side.
+- **Large folders on Vercel.** A function call is limited to 60 seconds, so a folder with thousands of emails may not finish loading in one request. Locally there is no such limit.
+- **Confidence and risk figures are heuristics.** The demurrage and exposure numbers use assumed constants.
+
+---
+
+## 9. Further documentation
+
+| Document | What it covers |
+|---|---|
+| [SUPABASE_SETUP.md](SUPABASE_SETUP.md) | Persistence: what is stored where, setup, limits |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Vercel deployment |
+| [STANDARDS_ALIGNMENT.md](STANDARDS_ALIGNMENT.md) | Alignment with ISO 42001 and 27001, DCSA, EU AI Act, SOC 2 |
+| [AVERIS_FIT.md](AVERIS_FIT.md) | Fit with Averis's public priorities and the pitch reasoning |
+| [COMPETITIVE_ADVANTAGE_AUDIT.md](COMPETITIVE_ADVANTAGE_AUDIT.md) | Measured strengths and claims to avoid |
+| [FEATURE_AUDIT.md](FEATURE_AUDIT.md) | Audit against the hackathon rubric and results history |
+| [AUTO_AMENDMENT_PLAN.md](AUTO_AMENDMENT_PLAN.md) | Design of the automatic amendment flow |
+| [PRODUCT.md](PRODUCT.md), [DESIGN.md](DESIGN.md), [WALKTHROUGH.md](WALKTHROUGH.md) | Product scope, design system, guided tour |
+| [web/README.md](web/README.md) | Web app notes |
+
+---
+
+**Team NavisAI, Averis Hackathon 2026.**
