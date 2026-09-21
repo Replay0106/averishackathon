@@ -461,30 +461,34 @@ def _ensure_dataset_registered(ds_id: str, ds_dir: Path) -> None:
 
 
 def _process_new_emails(new_email_ids: list) -> None:
-    """Run the pipeline on newly ingested emails (non-blocking)."""
+    """Run the pipeline on newly ingested emails and inject into active demo dataset."""
     try:
-        from api.main import run_email
+        from api.main import DATASETS, run_email
 
         ds_ref = _state.dataset_ref
-        if ds_ref is None:
-            logger.warning("No dataset reference — skipping pipeline processing")
-            return
-
-        # Reload the dataset's loader to pick up new files
-        from sdoc_loader import InboxLoader
-        ds_ref.loader = InboxLoader(str(ds_ref.root))
+        if ds_ref is not None:
+            from sdoc_loader import InboxLoader
+            ds_ref.loader = InboxLoader(str(ds_ref.root))
 
         for eid in new_email_ids:
-            try:
-                result = run_email(ds_ref, eid)
-                logger.info(
-                    "Processed %s: category=%s status=%s",
-                    eid, result.get("category"), result.get("status")
-                )
-            except Exception as e:
-                logger.error("Failed to process %s: %s", eid, e)
-                error_msg = f"Processing {eid}: {type(e).__name__}: {e}"
-                _state.errors.append(error_msg)
+            email_data = None
+            if ds_ref is not None:
+                try:
+                    email_data = ds_ref.loader.get_email(eid)
+                    result = run_email(ds_ref, eid)
+                    logger.info("Processed %s in %s: category=%s status=%s", eid, ds_ref.id, result.get("category"), result.get("status"))
+                except Exception as e:
+                    logger.error("Failed to process %s in ds_ref: %s", eid, e)
+
+            # Also inject and run in demo dataset so the user's primary inbox sees it without switching datasets
+            if "demo" in DATASETS and email_data is not None:
+                try:
+                    demo_ds = DATASETS["demo"]
+                    demo_ds.loader.inject_email(eid, email_data)
+                    demo_result = run_email(demo_ds, eid)
+                    logger.info("Injected %s into demo inbox: status=%s", eid, demo_result.get("status"))
+                except Exception as e:
+                    logger.error("Failed to inject %s into demo inbox: %s", eid, e)
 
     except ImportError as e:
         logger.warning("Pipeline import failed: %s", e)

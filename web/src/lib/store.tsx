@@ -323,16 +323,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       if (res && res.status === 'ok') {
         await refreshDatasets()
-        if (dataset !== res.dataset_id) {
-          switchDataset(res.dataset_id)
-        } else {
-          await refresh()
-        }
+        await refresh()
         return res
       }
       return null
     },
-    [dataset, refresh, refreshDatasets, switchDataset],
+    [refresh, refreshDatasets],
   )
 
   const value = useMemo(

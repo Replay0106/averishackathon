@@ -13,6 +13,7 @@ Identifies document content types (SI, BL, INVOICE, PACKING_LIST, COO) to detect
 import json
 import os
 import re
+import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass
@@ -55,10 +56,21 @@ class InboxLoader:
         self.bundle_dir = Path(bundle_dir)
         self.inbox_dir = self.bundle_dir / "inbox"
         self.attachments_dir = self.bundle_dir / "attachments"
+        self.injected_emails: Dict[str, Dict[str, Any]] = {}
+        self.injected_attachments: Dict[str, AttachmentData] = {}
+
+    def inject_email(self, email_id: str, email_data: Dict[str, Any], attachments: Optional[Dict[str, AttachmentData]] = None):
+        """Inject a dynamic or simulated email directly into this loader."""
+        self.injected_emails[email_id] = email_data
+        if attachments:
+            self.injected_attachments.update(attachments)
 
     def get_email_ids(self) -> List[str]:
-        files = sorted(self.inbox_dir.glob("*.json"))
-        return [f.stem for f in files]
+        files = sorted(self.inbox_dir.glob("*.json")) if self.inbox_dir.is_dir() else []
+        file_ids = [f.stem for f in files]
+        # Injected emails appear first in reverse order (newest simulated first)
+        injected = list(reversed(list(self.injected_emails.keys())))
+        return injected + [fid for fid in file_ids if fid not in self.injected_emails]
 
     def load_emails(self) -> List[Dict[str, Any]]:
         emails = []
@@ -67,13 +79,30 @@ class InboxLoader:
         return emails
 
     def get_email(self, email_id: str) -> Dict[str, Any]:
+        if email_id in self.injected_emails:
+            return self.injected_emails[email_id]
         path = self.inbox_dir / f"{email_id}.json"
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             return json.load(f)
 
     def load_attachment(self, rel_path: str) -> AttachmentData:
+        filename = Path(rel_path).name
+        if filename in self.injected_attachments:
+            return self.injected_attachments[filename]
+        if rel_path in self.injected_attachments:
+            return self.injected_attachments[rel_path]
+
         full_path = self.bundle_dir / rel_path
-        filename = full_path.name
+        if not full_path.exists():
+            for alt_base in [
+                Path(tempfile.gettempdir()) / "navis_datasets" / "gmail_live",
+                self.bundle_dir.parent / "datasets" / "gmail_live",
+            ]:
+                alt_path = alt_base / rel_path
+                if alt_path.exists():
+                    full_path = alt_path
+                    break
+
         ext = full_path.suffix.lower()
 
         if not full_path.exists():

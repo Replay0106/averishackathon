@@ -203,7 +203,7 @@ export function SimulateGmailModal({ open, onClose, onSimulated }: SimulateGmail
         <div className="mt-5 flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.015] px-4 py-3 text-[11.5px] text-ink3">
           <div className="flex items-center gap-2">
             <Sparkles className="size-3.5 text-brand" />
-            <span>Target dataset: <strong className="font-medium text-ink2">Gmail Live Inbox</strong> (<span className="font-mono">datasets/gmail_live</span>)</span>
+            <span>Real-time intake: <strong className="font-medium text-ink2">Appends directly to your active inbox &amp; cases</strong></span>
           </div>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
