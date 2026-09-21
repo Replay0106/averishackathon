@@ -222,7 +222,10 @@ def gmail_simulate(req: SimulateRequest):
         _process_new_emails([email_id])
 
         result_data = None
-        if _state.dataset_ref and email_id in _state.dataset_ref.cache:
+        from api.main import DATASETS
+        if "demo" in DATASETS and email_id in DATASETS["demo"].cache:
+            result_data = DATASETS["demo"].cache[email_id]
+        elif _state.dataset_ref and email_id in _state.dataset_ref.cache:
             result_data = _state.dataset_ref.cache[email_id]
 
         return {
@@ -518,7 +521,17 @@ def _process_new_emails(new_email_ids: list) -> None:
             if "demo" in DATASETS and email_data is not None:
                 try:
                     demo_ds = DATASETS["demo"]
-                    demo_ds.loader.inject_email(eid, email_data)
+                    att_dict = {}
+                    if ds_ref is not None:
+                        for a in email_data.get("attachments", []):
+                            try:
+                                loaded_att = ds_ref.loader.load_attachment(a)
+                                if not loaded_att.is_corrupted:
+                                    att_dict[Path(a).name] = loaded_att
+                                    att_dict[a] = loaded_att
+                            except Exception:
+                                pass
+                    demo_ds.loader.inject_email(eid, email_data, attachments=att_dict)
                     demo_result = run_email(demo_ds, eid)
                     logger.info("Injected %s into demo inbox: status=%s", eid, demo_result.get("status"))
                 except Exception as e:

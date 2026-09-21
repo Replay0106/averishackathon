@@ -21,6 +21,7 @@ import io
 import json
 import os
 import re
+import sys
 import threading
 import zipfile
 from datetime import datetime
@@ -314,7 +315,18 @@ _backend: Optional[Backend] = None
 _resolved = False
 
 
+def _under_test_runner() -> bool:
+    argv0 = (sys.argv[0] if sys.argv else "").lower()
+    return "pytest" in argv0 or "unittest" in argv0 or "py.test" in argv0
+
+
 def enabled() -> bool:
+    """True when both variables are set. A developer's real keys in .env must never make the test suite write to
+    the real project, so under pytest/unittest Supabase is off unless NAVIS_ALLOW_LIVE_STORE=1."""
+    if os.environ.get("NAVIS_STORAGE", "").lower() == "local":
+        return False
+    if _under_test_runner() and os.environ.get("NAVIS_ALLOW_LIVE_STORE") != "1":
+        return False
     return bool(os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_SERVICE_ROLE_KEY"))
 
 

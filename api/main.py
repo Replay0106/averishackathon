@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -182,21 +182,15 @@ _gmail_reinjected = False
 
 
 def _reinject_gmail_into_demo() -> None:
-    """Simulated and live Gmail emails are shown in the demo inbox as well; that view is rebuilt in memory, so
-    after a restart the stored Gmail emails are put back."""
+    """Simulated and live Gmail emails are shown in the demo inbox as well (see _sync_injected_emails, which reads the
+    local gmail_live folder). After a restart that folder is gone, so restore it from Supabase first."""
     global _gmail_reinjected
     if _gmail_reinjected or sdoc_store.get_store() is None:
         return
     _gmail_reinjected = True
-    demo = DATASETS.get("demo")
-    if demo is None:
-        return
     for g in [d for d in DATASETS.values() if d.kind == "gmail"]:
         try:
             g.ensure_local()
-            g.loader = InboxLoader(str(g.root))
-            for eid in reversed(g.loader.get_email_ids()):
-                demo.loader.inject_email(eid, g.loader.get_email(eid))
         except Exception:
             continue
 
@@ -461,6 +455,34 @@ def storage_status():
             "max_part_bytes": sdoc_store.PACK_LIMIT_BYTES, "max_total_bytes": importer.MAX_TOTAL_BYTES}
 
 
+def _sync_injected_emails(demo_ds: Dataset) -> None:
+    live_inbox = DATASETS_DIR / "gmail_live" / "inbox"
+    if not live_inbox.is_dir():
+        return
+    for json_file in live_inbox.glob("gmail_*.json"):
+        eid = json_file.stem
+        if eid not in demo_ds.loader.injected_emails:
+            try:
+                data = json.loads(json_file.read_text(encoding="utf-8", errors="replace"))
+                att_dict = {}
+                for a in data.get("attachments", []):
+                    fn = Path(a).name
+                    att_path = DATASETS_DIR / "gmail_live" / "attachments" / fn
+                    if att_path.exists():
+                        from sdoc_loader import AttachmentData
+                        raw = att_path.read_bytes()
+                        att = AttachmentData(path=a, filename=fn, extension=att_path.suffix.lower(), raw_bytes=raw)
+                        if att.extension == ".txt":
+                            demo_ds.loader._parse_txt(att, raw)
+                        elif att.extension == ".pdf":
+                            demo_ds.loader._parse_pdf(att, att_path, raw)
+                        att_dict[fn] = att
+                        att_dict[a] = att
+                demo_ds.loader.inject_email(eid, data, attachments=att_dict)
+            except Exception as e:
+                logger.warning("Failed to sync %s into demo dataset: %s", eid, e)
+
+
 @app.get("/api/health")
 def health():
     d = DATASETS["demo"]
@@ -470,18 +492,29 @@ def health():
 
 
 @app.get("/api/emails")
-def emails(ds: str = "demo"):
+def emails(response: Response, ds: str = "demo"):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     d = ds_of(ds)
     d.refresh_decisions()
+    if d.kind == "demo":
+        _sync_injected_emails(d)
     ensure_amendments(d)
     amends = outbox.all(d.id)
     return [_summary_row(d, run_email(d, e), amends) for e in d.loader.get_email_ids()]
 
 
 @app.get("/api/emails/{eid}")
-def email_detail(eid: str, ds: str = "demo"):
+def email_detail(eid: str, response: Response, ds: str = "demo"):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     d = ds_of(ds)
+    if d.kind == "demo":
+        _sync_injected_emails(d)
     if eid not in d.loader.get_email_ids():
+        for other_ds in DATASETS.values():
+            if eid in other_ds.loader.get_email_ids():
+                other_ds.refresh_decisions()
+                ensure_amendments(other_ds)
+                return _apply_override(other_ds, run_email(other_ds, eid))
         raise HTTPException(404, "email not found")
     d.refresh_decisions()
     ensure_amendments(d)
@@ -489,8 +522,11 @@ def email_detail(eid: str, ds: str = "demo"):
 
 
 @app.get("/api/summary")
-def summary(ds: str = "demo"):
+def summary(response: Response, ds: str = "demo"):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     d = ds_of(ds)
+    if d.kind == "demo":
+        _sync_injected_emails(d)
     rows = [run_email(d, e) for e in d.loader.get_email_ids()]
     cats: Dict[str, int] = {}
     fields: Dict[str, int] = {}

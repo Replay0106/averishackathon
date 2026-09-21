@@ -87,6 +87,15 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
   const [open, setOpen] = useState<string | null>(initialId ?? null)
   const [limit, setLimit] = useState(40)
   const [simOpen, setSimOpen] = useState(false)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (initialId) {
+      setOpen(initialId)
+      setCat('ALL')
+      setQ('')
+    }
+  }, [initialId])
 
   const counts = useMemo(() => {
     const m: Record<string, number> = { ALL: emails.length }
@@ -171,10 +180,18 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
         <motion.div key={cat + q} initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.02 } } }}>
           {list.slice(0, shown).map((e, i) => {
             const isOpen = open === e.id
+            const isHighlighted = highlightId === e.id
             const t = new Date(Date.UTC(2026, 8, 20, 6, 0) - i * 137000)
             return (
               <motion.div key={e.id} variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }} className="border-b border-white/[0.05] last:border-0">
-                <button onClick={() => setOpen(isOpen ? null : e.id)} className={cn('grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,2.4fr)_120px_150px_116px] items-center gap-4 px-6 py-3 text-left transition-colors max-lg:grid-cols-[1fr_auto]', isOpen ? 'bg-white/[0.05]' : 'hover:bg-white/[0.03]')}>
+                <button
+                  onClick={() => setOpen(isOpen ? null : e.id)}
+                  className={cn(
+                    'grid w-full grid-cols-[minmax(0,1.1fr)_minmax(0,2.4fr)_120px_150px_116px] items-center gap-4 px-6 py-3 text-left transition-all max-lg:grid-cols-[1fr_auto]',
+                    isOpen ? 'bg-white/[0.05]' : 'hover:bg-white/[0.03]',
+                    isHighlighted && 'bg-sky/[0.08] ring-1 ring-inset ring-sky/50 shadow-[0_0_15px_rgba(56,189,248,0.15)]'
+                  )}
+                >
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span className={cn('size-1.5 shrink-0 rounded-full transition-colors', isOpen ? 'bg-brand' : e.category === 'BL_COMPARISON' ? 'bg-sky' : 'bg-white/20')} />
                     <span className="truncate text-[13px] font-medium capitalize">{senderName(e.sender)}</span>
@@ -208,8 +225,18 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
         open={simOpen}
         onClose={() => setSimOpen(false)}
         onSimulated={(id) => {
-          setOpen(id)
+          setQ('')
           setCat('ALL')
+          setLimit((l) => Math.max(l, 40))
+          setOpen(id)
+          setHighlightId(id)
+          setTimeout(() => {
+            setOpen(id)
+          }, 60)
+          setTimeout(() => {
+            setHighlightId((cur) => (cur === id ? null : cur))
+          }, 3500)
+          window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
       />
     </div>
