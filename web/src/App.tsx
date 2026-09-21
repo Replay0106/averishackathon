@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion'
+import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { CommandPalette, Sidebar, SystemHealth, TopBar } from './components/Shell'
 import { FlyProvider } from './components/Fly'
@@ -21,7 +22,7 @@ import Settings from './pages/Settings'
 
 export default function App() {
   const { route, go } = useRoute()
-  const { ready } = useApp()
+  const { ready, loading, dataset, datasets } = useApp()
   const [palette, setPalette] = useState(false)
   const [health, setHealth] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -74,6 +75,11 @@ export default function App() {
         <div className="pl-[68px] lg:pl-[248px]">
           <TopBar onPalette={() => setPalette(true)} onHealth={() => setHealth(true)} onImport={() => setImporting(true)} />
           <main className="mx-auto w-full max-w-[1760px] px-6 py-8 xl:px-10">
+            {loading && (
+              <div role="status" className="mb-4 flex items-center gap-2 rounded-lg border border-sky/25 bg-sky/[0.06] px-4 py-2.5 text-[12.5px] text-sky">
+                <Loader2 className="size-4 animate-spin" /> Loading {datasets.find((d) => d.id === dataset)?.name ?? 'folder'}… a large folder can take several seconds.
+              </div>
+            )}
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={route.page}

@@ -123,6 +123,22 @@ class TestVisionAndKv(StoreCase):
         sdoc_store.kv_set("gmail_state:x", {"email_counter": 5})
         self.assertEqual(sdoc_store.kv_get("gmail_state:x"), {"email_counter": 5})
 
+    def test_many_lookups_read_the_table_once(self):
+        calls = []
+        real = self.backend.select
+
+        def counting(*a, **k):
+            calls.append(a[0])
+            return real(*a, **k)
+
+        self.backend.select = counting
+        sdoc_store.set_store(self.backend)
+        sdoc_store.vision_put("known", {"shipper": "ACME"})
+        for i in range(50):
+            self.assertIsNone(sdoc_store.vision_get(f"missing-{i}"))
+        self.assertEqual(sdoc_store.vision_get("known"), {"shipper": "ACME"})
+        self.assertEqual(calls.count(sdoc_store.T_VCACHE), 1)
+
     def test_no_store_means_no_calls(self):
         sdoc_store.set_store(None)
         self.assertIsNone(sdoc_store.vision_get("k"))
@@ -332,6 +348,23 @@ class TestDirectUploadApi(StoreCase):
         self.assertEqual(self.client.get("/api/datasets").json()[-1]["emails"], 3)  # listed without downloading anything
         emails = self.client.get(f"/api/emails?ds={ds_id}").json()
         self.assertEqual(len(emails), 3)
+
+    def test_another_server_instance_sees_datasets_imported_or_deleted_elsewhere(self):
+        m = self.m
+        ds_id = self.client.post("/api/datasets/uploads", json={"parts": 1}).json()["dataset_id"]
+        self.backend.put_object(f"{ds_id}/raw/part-0001.zip", self.bundle_zip())
+        self.client.post(f"/api/datasets/{ds_id}/finalize", json={"name": "A", "parts": 1})
+
+        # a different instance never heard of this dataset: it is found through the table, not answered with 404
+        shutil.rmtree(m.DATASETS_DIR / ds_id)
+        m.DATASETS.pop(ds_id)
+        self.assertEqual(self.client.get(f"/api/emails?ds={ds_id}").status_code, 200)
+        self.assertEqual(len(self.client.get(f"/api/emails?ds={ds_id}").json()), 3)
+
+        # deleted through another instance: this one stops listing it
+        sdoc_store.delete_dataset_everywhere(self.backend, ds_id)
+        self.assertNotIn(ds_id, [d["id"] for d in self.client.get("/api/datasets").json()])
+        self.assertEqual(self.client.get(f"/api/emails?ds={ds_id}").status_code, 404)
 
     def test_finalize_refuses_missing_parts_and_reused_ids(self):
         ds_id = self.client.post("/api/datasets/uploads", json={"parts": 1}).json()["dataset_id"]

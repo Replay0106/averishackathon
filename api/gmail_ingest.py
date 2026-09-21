@@ -486,6 +486,7 @@ def _ensure_dataset_registered(ds_id: str, ds_dir: Path) -> None:
             if backend is not None:
                 try:
                     sdoc_store.save_dataset_row(backend, ds_id, "Gmail Live Inbox", "gmail", ds.created, {})
+                    ds.stored = True
                 except Exception as e:
                     logger.error("Could not store the gmail dataset row: %s", e)
             logger.info("Registered gmail dataset: %s", ds_id)

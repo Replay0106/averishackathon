@@ -106,6 +106,7 @@ class Dataset:
         self.id, self.name, self.root, self.kind = id, name, root, kind
         # remote: the files live in Supabase Storage and are copied into `root` (a local cache) on first use
         self.remote = remote
+        self.stored = remote  # has a row in Supabase (set when saved or loaded from there)
         self.hydrated = not remote
         self._hydrate_lock = threading.Lock()
         self.created = created or datetime.utcnow().isoformat() + "Z"
@@ -175,6 +176,25 @@ def _load_saved() -> None:
                                         created=r.get("created"), report=r.get("report"), remote=True)
 
 
+def _refresh_registry() -> None:
+    """With several server instances (serverless), a dataset imported or deleted through one instance must show up
+    on the others: bring the in-memory list back in line with the datasets table."""
+    backend = sdoc_store.get_store()
+    if backend is None:
+        return
+    try:
+        rows = sdoc_store.list_dataset_rows(backend)
+    except sdoc_store.StoreError:
+        return  # keep serving what this instance already knows
+    ids = {r["id"] for r in rows}
+    for r in rows:
+        if r["id"] not in DATASETS:
+            DATASETS[r["id"]] = Dataset(r["id"], r["name"], DATASETS_DIR / r["id"], kind=r.get("kind", "import"),
+                                        created=r.get("created"), report=r.get("report"), remote=True)
+    for did in [k for k, d in DATASETS.items() if d.stored and k not in ids]:
+        DATASETS.pop(did, None)
+
+
 _load_saved()
 
 
@@ -196,6 +216,8 @@ def _reinject_gmail_into_demo() -> None:
 
 
 def ds_of(ds: str) -> Dataset:
+    if ds not in DATASETS:
+        _refresh_registry()  # it may have been imported through another server instance
     if ds not in DATASETS:
         raise HTTPException(404, f"unknown dataset {ds!r}")
     d = DATASETS[ds]
@@ -671,6 +693,7 @@ def _persist_dataset(d: Dataset) -> None:
     packs = sdoc_store.save_pack(backend, d.id, d.root)
     d.report = {**d.report, "packs": packs}
     sdoc_store.save_dataset_row(backend, d.id, d.name, d.kind, d.created, d.report)
+    d.stored = True
 
 
 class UploadPlan(BaseModel):
@@ -771,6 +794,7 @@ def finalize_upload(ds_id: str, body: FinalizeUpload):
 
 @app.get("/api/datasets")
 def list_datasets():
+    _refresh_registry()
     return [d.info() for d in DATASETS.values()]
 
 

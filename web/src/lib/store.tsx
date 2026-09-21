@@ -27,10 +27,10 @@ export function resolveApiPath(path: string): string {
   return path.startsWith('/') ? `${API_BASE}${path}` : `${API_BASE}/${path}`
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T | null> {
+async function api<T>(path: string, init?: RequestInit, timeoutMs = 6000): Promise<T | null> {
   try {
     const ctl = new AbortController()
-    const t = setTimeout(() => ctl.abort(), 6000)
+    const t = setTimeout(() => ctl.abort(), timeoutMs)
     const res = await fetch(resolveApiPath(path), { ...init, signal: ctl.signal })
     clearTimeout(t)
     if (!res.ok) return null
@@ -74,6 +74,8 @@ interface Ctx {
 const C = createContext<Ctx>(null as never)
 export const useApp = () => useContext(C)
 
+const EMPTY_SUMMARY: Summary = { total: 0, categories: {}, comparisons: 0, ok: 0, mismatch: 0, needs_review: 0, defect_fields: {} }
+
 const DEMO: DatasetInfo = { id: 'demo', name: 'SDOC demo inbox', kind: 'demo', created: '', emails: 0, job: { status: 'ready', done: 0, total: 0, failed: [] }, report: {} }
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -111,8 +113,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let alive = true
     setLoading(true)
     details.current = {}
+    // Never keep showing the previous folder's documents while this one loads (or if it fails to load).
+    setEmails([])
+    setSummary(EMPTY_SUMMARY)
+    setRes({})
     ;(async () => {
-      const [list, sum] = await Promise.all([api<EmailRow[]>(withDs('/api/emails')), api<Summary>(withDs('/api/summary'))])
+      // A dataset that is not warm on the server instance answering can take many seconds to load, so this call
+      // waits far longer than the 6 s used for small requests, and tries once more before giving up.
+      const load = () => Promise.all([api<EmailRow[]>(withDs('/api/emails'), undefined, 90000), api<Summary>(withDs('/api/summary'), undefined, 90000)])
+      let [list, sum] = await load()
+      if (alive && (!list || !sum) && dataset !== 'demo') [list, sum] = await load()
       if (!alive) return
       if (list && sum) {
         const ids = new Set(list.map((e) => e.id))
@@ -132,9 +142,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSummary(snap.summary)
         setLive(false)
         setRes({})
+      } else {
+        toast({ tone: 'warn', title: 'Could not load this folder', body: 'The server did not return its documents. Try switching to it again.' })
       }
       if (!ready) {
         await Promise.all([refreshAudit(), refreshDatasets()])
+      } else {
+        refreshDatasets().catch(() => {})  // keeps the document counts in the folder list current
       }
       setReady(true)
       setLoading(false)

@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import threading
+import time
 import zipfile
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -501,18 +502,43 @@ def make_decisions() -> DecisionStore:
 
 
 # --------------------------------------------------------------------------------------------- vision cache, kv
+# The cache table is read once and kept in memory: a dataset with hundreds of scanned pages would otherwise make
+# one request per page. A miss re-reads the whole table at most every VISION_REFRESH_S seconds, which picks up
+# reads stored by other server instances.
+VISION_REFRESH_S = 30.0
+_vision_mem: Dict[str, Dict[str, Any]] = {}
+_vision_loaded_at = 0.0
+_vision_backend: Optional[Backend] = None
+
+
+def _vision_reload(b: Backend) -> None:
+    global _vision_loaded_at, _vision_backend
+    _vision_mem.clear()
+    _vision_mem.update({r["key"]: r["data"] for r in b.select_all(T_VCACHE)})
+    _vision_loaded_at, _vision_backend = time.monotonic(), b
+
+
 def vision_get(key: str) -> Optional[Dict[str, Any]]:
     b = get_store()
     if b is None:
         return None
-    rows = b.select(T_VCACHE, {"key": key}, limit=1)
-    return rows[0]["data"] if rows else None
+    with _lock:
+        if _vision_backend is not b:
+            _vision_reload(b)
+        hit = _vision_mem.get(key)
+        if hit is None and time.monotonic() - _vision_loaded_at > VISION_REFRESH_S:
+            _vision_reload(b)
+            hit = _vision_mem.get(key)
+        return hit
 
 
 def vision_put(key: str, data: Dict[str, Any]) -> None:
     b = get_store()
     if b is not None:
         b.insert(T_VCACHE, {"key": key, "data": data}, on_conflict="key")
+        with _lock:
+            if _vision_backend is b:
+                _vision_mem[key] = data
 
 
 def vision_log(entry: Dict[str, Any]) -> None:
