@@ -217,10 +217,17 @@ def verify_tampered(record_id: int):
 
 
 @router.get("/email-check/{email_id}")
-def email_check(email_id: str):
+def email_check(email_id: str, ds: str = "demo"):
     """Consumed by the Compliance Gate page: what did the real security
     pipeline decide about the email this shipment's documents arrived in?"""
-    d = GATEWAY.decisions_by_email_id.get(email_id)
+    key = email_id
+    if ds != "demo":
+        from api.main import DATASETS, ensure_gateway, gateway_key
+        dataset = DATASETS.get(ds)
+        if dataset is not None:
+            ensure_gateway(dataset)
+            key = gateway_key(dataset, email_id)
+    d = GATEWAY.decisions_by_email_id.get(key)
     if d is None:
         return {"checked": False}
     return {"checked": True, **_decision_dict(d)}

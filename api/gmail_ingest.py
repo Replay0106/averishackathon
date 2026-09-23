@@ -538,6 +538,18 @@ def _process_new_emails(new_email_ids: list) -> None:
                 except Exception as e:
                     logger.error("Failed to inject %s into demo inbox: %s", eid, e)
 
+        # New mail passes the Trust Gateway as live traffic, then gets its automatic amendment straight away
+        # (not only after the next page load or restart).
+        from api.main import ensure_amendments, ensure_gateway
+
+        live = set(new_email_ids)
+        for ds in [d for d in (DATASETS.get("demo"), ds_ref) if d is not None]:
+            try:
+                ensure_gateway(ds, live=live)
+                ensure_amendments(ds)
+            except Exception as e:  # noqa: BLE001
+                logger.error("Gateway/amendment step failed for %s: %s", ds.id, e)
+
     except ImportError as e:
         logger.warning("Pipeline import failed: %s", e)
 

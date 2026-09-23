@@ -8,18 +8,41 @@ Classifies incoming shipping operations emails into 5 distinct categories:
   - GENERAL: General shipping status, vessel schedules, berthing reports, operational notices.
   - SPAM: Unsolicited sales, marketing promotions, phishing, irrelevant messages.
 
-Supports high-speed deterministic regex pre-classification and batched Gemini Flash LLM refinement.
+Classification is rule-based. Optionally (NAVIS_LLM_CLASSIFIER=1), an email that no rule matches is given to Gemini
+instead of defaulting to GENERAL. evaluate.py measures rules, LLM-only and this hybrid against the answer keys; on the
+DOCSTRESS sets all three score the same, so the fallback is off by default.
 """
 
-import json
+import hashlib
 import os
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-try:
-    from google import genai
-except ImportError:
-    genai = None
+CATEGORIES = ("BL_COMPARISON", "SI_REQUEST", "INVOICE_QUERY", "GENERAL", "SPAM")
+
+# Shared by the optional fallback below and by evaluate.py, so the app and the evaluation ask the same question.
+LLM_CATEGORY_PROMPT = """You label emails received by a shipping documentation desk. Give each email exactly one category:
+- BL_COMPARISON: asks for a draft Bill of Lading to be checked or compared against the Shipping Instruction (or sends those documents for checking).
+- SI_REQUEST: asks the recipient to send or submit a Shipping Instruction.
+- INVOICE_QUERY: about an invoice, charges, billing or payment.
+- SPAM: unsolicited, promotional, phishing or scam messages.
+- GENERAL: any other business correspondence.
+Return only a JSON object that maps every email id to its category."""
+
+
+def llm_email_text(email: Dict[str, Any]) -> str:
+    atts = ", ".join(Path(a).name for a in email.get("attachments", [])) or "none"
+    return (f"id: {email.get('email_id') or email.get('id')}\nsubject: {email.get('subject', '')}\nattachments: {atts}\n"
+            f"body: {(email.get('body') or '')[:1500]}")
+
+
+def llm_fallback_enabled() -> bool:
+    if os.environ.get("NAVIS_LLM_CLASSIFIER") != "1":
+        return False
+    import sdoc_llm
+
+    return sdoc_llm.available()
 
 
 DRAFT_REQUEST = re.compile(r"\b(?:send|provide|share|forward|issue)\b[^.\n]{0,25}\bdraft\s+b/?l\b", re.IGNORECASE)
@@ -77,14 +100,21 @@ def is_draft_request(email: Dict[str, Any]) -> bool:
 
 class EmailClassifier:
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        self._client = None
+        self._llm_cache: Dict[str, str] = {}
 
-    @property
-    def client(self):
-        if self._client is None and genai is not None and self.api_key:
-            self._client = genai.Client(api_key=self.api_key)
-        return self._client
+    def _llm_category(self, email: Dict[str, Any]) -> Optional[str]:
+        """Gemini's category for an email no rule matched, or None if the call fails or the answer is not a category."""
+        import sdoc_llm
+
+        text = llm_email_text({**email, "email_id": "e1"})
+        key = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if key not in self._llm_cache:
+            data, rec = sdoc_llm.generate_json(LLM_CATEGORY_PROMPT + "\n\n" + text)
+            label = str((data or {}).get("e1", "")).strip().upper() if isinstance(data, dict) else ""
+            if not rec.get("ok") or label not in CATEGORIES:
+                return None
+            self._llm_cache[key] = label
+        return self._llm_cache[key]
 
     def classify_email(self, email: Dict[str, Any]) -> str:
         """Classifies a single email using high-precision deterministic rules."""
@@ -154,7 +184,11 @@ class EmailClassifier:
         ):
             return "SI_REQUEST"
 
-        # 6. Default fallback to GENERAL
+        # 6. No rule matched: optionally ask Gemini (NAVIS_LLM_CLASSIFIER=1), otherwise GENERAL.
+        if llm_fallback_enabled():
+            label = self._llm_category(email)
+            if label:
+                return label
         return "GENERAL"
 
     def classify_all(self, emails: List[Dict[str, Any]]) -> Dict[str, str]:

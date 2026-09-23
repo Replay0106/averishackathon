@@ -78,8 +78,11 @@ export interface AuditBlock {
   previous_hash: string
   block_hash: string
 }
+export interface CopilotItem { shipment: string; email: string; note: string }
+export interface CopilotStat { label: string; value: number; tone?: 'ok' | 'bad' | 'warn' }
+export interface CopilotBar { label: string; count: number; note?: string }
 export interface CopilotReply {
-  kind: 'help' | 'not_comparison' | 'review' | 'clear' | 'mismatch'
+  kind: 'help' | 'not_comparison' | 'review' | 'clear' | 'mismatch' | 'dataset'
   shipment?: string
   email?: string
   message?: string
@@ -87,6 +90,20 @@ export interface CopilotReply {
   reason?: string
   confidence?: number
   recommendation?: string
+  handling?: string | null
+  missing?: string[]
   issues?: CompareRow[]
   evidence?: string[]
+  // whole-dataset answers
+  title?: string
+  total?: number
+  items?: CopilotItem[]
+  more?: number
+  stats?: CopilotStat[]
+  breakdown?: CopilotBar[]
+  link?: 'cases' | 'compliance' | 'analytics'
+  examples?: string[]
+  // set when Gemini translated a free-form question into one of the supported queries
+  interpreted_as?: string
+  via?: string
 }

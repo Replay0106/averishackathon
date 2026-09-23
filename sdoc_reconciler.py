@@ -58,27 +58,47 @@ def normalize_entity(s: Optional[str]) -> str:
     return " ".join(clean.split())
 
 
+# Other names for the same port: spelling variants, local names and UN/LOCODEs. Only true synonyms of one port are
+# listed; a terminal is never merged into its city, because a draft BL naming a different terminal may be a real change.
+PORT_ALIASES = {
+    "PORT KLANG": ["PORT KELANG", "PELABUHAN KLANG", "PT KLANG", "P KLANG", "KELANG", "KLANG", "MYPKG"],
+    "TANJUNG PELEPAS": ["TANJONG PELEPAS", "TG PELEPAS", "PTP", "MYTPP"],
+    "PENANG": ["PULAU PINANG", "MYPEN"],
+    "PASIR GUDANG": ["MYPGU"],
+    "SINGAPORE": ["SGSIN"],
+    "JEBEL ALI": ["JABAL ALI", "AEJEA"],
+    "NHAVA SHEVA": ["JAWAHARLAL NEHRU PORT", "JAWAHARLAL NEHRU", "NHAVASHEVA", "JNPT", "INNSA"],
+    "MUNDRA": ["INMUN"],
+    "CHENNAI": ["MADRAS", "INMAA"],
+    "HO CHI MINH": ["HO CHI MINH CITY", "HOCHIMINH CITY", "HOCHIMINH", "SAIGON", "VNSGN"],
+    "LAEM CHABANG": ["THLCH"],
+    "TANJUNG PRIOK": ["TANJUNG PRIUK", "TG PRIOK", "IDTPP"],
+    "SHANGHAI": ["CNSHA"],
+    "NINGBO": ["NINGBO ZHOUSHAN", "CNNGB"],
+    "YANTIAN": ["CNYTN"],
+    "HONG KONG": ["HONGKONG", "HKHKG"],
+    "BUSAN": ["PUSAN", "KRPUS"],
+    "KAOHSIUNG": ["TWKHH"],
+    "CHITTAGONG": ["CHATTOGRAM", "BDCGP"],
+    "COLOMBO": ["LKCMB"],
+    "KARACHI": ["PKKHI"],
+    "MANILA": ["PHMNL"],
+    "YOKOHAMA": ["JPYOK"],
+    "ROTTERDAM": ["NLRTM"],
+    "HAMBURG": ["DEHAM"],
+    "ANTWERP": ["ANTWERPEN", "ANVERS", "BEANR"],
+    "LOS ANGELES": ["USLAX"],
+    "LONG BEACH": ["USLGB"],
+}
+_ALIAS_TO_PORT = {alias: port for port, aliases in PORT_ALIASES.items() for alias in [port, *aliases]}
+# One pass, longest name first, whole words only: "PORT KLANG" is not rewritten a second time via "KLANG".
+_ALIAS_RE = re.compile(r"\b(?:" + "|".join(re.escape(a) for a in sorted(_ALIAS_TO_PORT, key=len, reverse=True)) + r")\b")
+
+
 def normalize_port(s: Optional[str]) -> str:
     if not s:
         return ""
-    clean = normalize_text(s)
-    # Port synonyms mapping
-    synonyms = {
-        "PORT KELANG": "PORT KLANG",
-        "KELANG": "PORT KLANG",
-        "KLANG": "PORT KLANG",
-        "MYPKG": "PORT KLANG",
-        "TANJUNG PELEPAS": "TANJUNG PELEPAS",
-        "PTP": "TANJUNG PELEPAS",
-        "MYTPP": "TANJUNG PELEPAS",
-        "JAWAHARLAL NEHRU": "NHAVA SHEVA",
-        "JNPT": "NHAVA SHEVA",
-        "INNSA": "NHAVA SHEVA"
-    }
-    for k, v in synonyms.items():
-        if k in clean:
-            clean = clean.replace(k, v)
-    return clean
+    return _ALIAS_RE.sub(lambda m: _ALIAS_TO_PORT[m.group(0)], normalize_text(s))
 
 
 def extract_city(port_str: str) -> str:

@@ -20,7 +20,7 @@ Shipping-documentation teams receive mixed emails all day: requests to check an 
 
 | Area | What it does |
 |---|---|
-| **Email triage** | Sorts every email into `BL_COMPARISON`, `SI_REQUEST`, `INVOICE_QUERY`, `GENERAL` or `SPAM` with deterministic rules and intent patterns (no model call). |
+| **Email triage** | Sorts every email into `BL_COMPARISON`, `SI_REQUEST`, `INVOICE_QUERY`, `GENERAL` or `SPAM` with deterministic rules and intent patterns (no model call by default; an optional Gemini fallback for emails no rule matches). |
 | **Document identification** | Finds the SI and the draft BL among the attachments by file name and content. Wrong document, missing attachment and a second copy of the BL are detected. |
 | **Field extraction** | Reads seven fields from text, PDF, Word and Excel attachments with regular expressions. Scanned PDFs are read with Gemini vision, and only those. |
 | **Comparison** | Compares SI against BL on shipper, consignee, notify party, port of loading, port of discharge, container count and gross weight, with normalisation for legal suffixes, port aliases, units and "same as consignee". |
@@ -31,7 +31,7 @@ Shipping-documentation teams receive mixed emails all day: requests to check an 
 | **Trust Gateway** | A ten-gate intake pipeline that scores each sender domain, holds a single document mismatch for corroboration, and commits accepted emails to a Merkle-proof ledger. |
 | **Audit trail** | A SHA-256 hash-chained ledger of every automatic and human action, with an integrity check. |
 | **Compliance Gate** | A pre-release checklist per shipment: document consistency, weight, containers, dangerous-goods markers, HS-code presence and the sender's gateway verdict. |
-| **Ask Navis** | A copilot that answers questions such as "Why is SHP-2048 flagged?" from the actual verification result. |
+| **Ask Navis** | Answers questions about one shipment ("Why is SHP-2048 flagged?", then "was it sent?") or the whole inbox ("How many mismatches?", "Which cases need a person?", "What did we send today?", "Which sender has the most errors?"). Every answer is read from the verification results and the amendment log. A question phrased in a way the rules do not recognise is translated by Gemini into one of the supported queries (only the question text is sent, and the reply shows what it was interpreted as); the answer itself is still computed, never generated. A question it cannot answer gets a list of what it can. |
 | **Analytics** | Discrepancies by field and carrier, verification volume and auto-resolution rate by batch. |
 | **Folder import** | Import a folder of emails and attachments (bundle layout or `.eml` files) as a separate dataset and switch between datasets. |
 | **Gmail** | Live inbox listener over OAuth, plus a one-click **Simulate Inbound Gmail** that needs no Google credentials. |
@@ -89,7 +89,7 @@ flowchart LR
     end
 
     subgraph External
-        GEM["Google Gemini<br/>scanned PDFs only"]
+        GEM["Google Gemini<br/>scanned PDFs; Ask Navis question translation"]
         GMAIL["Gmail API<br/>live inbox"]
     end
 
@@ -107,6 +107,7 @@ flowchart LR
     AMEND --> LEDGER
     ROUTES --> LEDGER
     EXT -. "vision, only when text cannot be read" .-> GEM
+    ROUTES -. "Ask Navis: question text only" .-> GEM
     ROUTES <--> GMAIL
     ROUTES --> LOCAL
     ROUTES -. "when SUPABASE_URL and key are set" .-> SUPA
@@ -168,23 +169,24 @@ The Gmail login files (`credentials.json`, `token.json`) are never stored in Sup
 ## 3. How the engines work
 
 ### 3.1 Classification (`sdoc_classifier.py`)
-A decision list, first match wins: SI and BL attached, then a body asking to compare, then a request to send a draft BL, then spam, invoice, SI-request intent, and finally `GENERAL`. Keyword lists are backed by regular-expression intent patterns so unfamiliar wording is still caught. Nothing is learned and no model is called.
+A decision list, first match wins: SI and BL attached, then a body asking to compare, then a request to send a draft BL, then spam, invoice, SI-request intent, and finally `GENERAL`. Keyword lists are backed by regular-expression intent patterns so unfamiliar wording is still caught. Nothing is learned and, by default, no model is called. Optionally (`NAVIS_LLM_CLASSIFIER=1`) an email that no rule matches is classified by Gemini instead of defaulting to `GENERAL`; it is off by default because the evaluation (section 4) shows no gain on the DOCSTRESS sets.
 
 ### 3.2 Loading and extraction (`sdoc_loader.py`, `sdoc_extractor.py`)
-Text, PDF, Word and Excel attachments are parsed and typed by content. Fields are found with label-based patterns that accept `Label: value`, dash and pipe forms, numbered dotted lines, and label variants such as `Party to Notify` and `Equipment`. A field stated twice with different values is a conflict. Image-only PDFs go to Gemini vision (default `gemini-3.6-flash`, override with `GEMINI_MODEL`, with fallbacks); every read is cached by the SHA-256 of the file, and each live call logs latency and tokens. If vision fails the document is marked unreadable and escalated.
+Text, PDF, Word and Excel attachments are parsed and typed by content. Fields are found with label-based patterns that accept `Label: value`, dash and pipe forms, numbered dotted lines, and label variants such as `Party to Notify` and `Equipment`. Container counts add up every equipment group (`2 x 20'GP, 3 x 40'HC` is 5). A field stated twice with different values is a conflict. Image-only PDFs go to Gemini vision (default `gemini-3.6-flash`, override with `GEMINI_MODEL`, with fallbacks); every read is cached by the SHA-256 of the file, and each live call logs latency and tokens. If vision fails the document is marked unreadable and escalated. Values read by vision have no line reference; the UI says so instead of showing a line number.
 
 ### 3.3 Reconciliation (`sdoc_reconciler.py`)
 - Legal suffixes are stripped (`Pte Ltd`, `Sdn Bhd`, `LLC`, `GmbH`, dotted forms).
 - Ports match when one side's city words are contained in the other's, so `JEBEL ALI` equals `JEBEL ALI, UAE`, while `Singapore` and `Singapore Changed` differ.
+- Other names for the same port are unified first: spelling variants, local names and UN/LOCODEs for about 30 major ports (`PORT KELANG`, `MYPKG` = `PORT KLANG`; `SAIGON` = `HO CHI MINH`; `CHATTOGRAM` = `CHITTAGONG`). Nearby ports and terminals are never merged, so `JEBEL ALI` and `DUBAI` still differ.
 - Weights are converted (MT, LBS) and compared with a 0.5 kg tolerance, so a 1 kg difference is reported but rounding noise is not.
 - `SAME AS CONSIGNEE` on the notify party is resolved.
 - Outcomes: `OK`, `MISMATCH` (with the differing fields), `NEEDS_REVIEW` (`missing_attachment`, `wrong_doc_type`, `unreadable`, `missing_value`).
 
 ### 3.4 Amendments (`sdoc_amendment.py`)
-A mismatch on any of the seven fields produces an email to the original sender listing each field with its SI and BL value. A sender the Trust Gateway rejected, or a missing sender address, is never contacted. The outbox is keyed by the exact set of differences, so the same amendment is never recorded twice, even across restarts. Review cases get their own wording (missing attachment, wrong document, unreadable file, blank field) through the one-click button in Cases. **Sending is simulated:** an amendment is an outbox record plus a ledger entry, and no email leaves the system.
+A mismatch on any of the seven fields produces an email to the original sender listing each field with its SI and BL value. A sender the Trust Gateway rejected at a security gate, or a missing sender address, is never contacted; a hold or rejection at gate 8, which judges only the mismatch itself, does not block the amendment. Emails that arrive later (simulated or live Gmail) get their amendment straight away. The outbox is keyed by the exact set of differences, so the same amendment is never recorded twice, even across restarts. Review cases get their own wording (missing attachment, wrong document, unreadable file, blank field) through the one-click button in Cases. **Sending is simulated:** an amendment is an outbox record plus a ledger entry, and no email leaves the system.
 
 ### 3.5 Trust Gateway (`sdoc_gateway.py`, `security_layer/`)
-The gateway looks at the sender and at the verification result of the email (its last gates use the extraction and comparison outcome). Ten sequential gates, cheapest first: domain rate limit, structural parse, sender trust, correspondence check, authentication heuristics, adaptive rate limit, duplicate check, extraction integrity, discrepancy plausibility, commit. Each sender domain has a continuous trust score. A single mismatch is held for corroboration instead of being flagged as fraud. Accepted emails are committed to a Merkle-proof ledger whose receipts can be verified in the UI.
+The gateway looks at the sender and at the verification result of the email (its last gates use the extraction and comparison outcome). Ten sequential gates, cheapest first: domain rate limit, structural parse, sender trust, correspondence check, authentication heuristics, adaptive rate limit, duplicate check, extraction integrity, discrepancy plausibility, commit. Each sender domain has a continuous trust score. A single mismatch is held for corroboration instead of being flagged as fraud. Accepted emails are committed to a Merkle-proof ledger whose receipts can be verified in the UI. Every dataset passes the gateway: the demo inbox at startup, imported folders when they load (as an archive, so without rate limiting), and each new Gmail message as live mail (rate limited). One gateway serves all datasets, so email ids are scoped per dataset.
 
 ### 3.6 Other engines
 - **Consensus (`sdoc_consensus.py`)**: links emails by booking, BL number and vessel, and tracks draft revisions.
@@ -193,7 +195,7 @@ The gateway looks at the sender and at the verification result of the email (its
 - **Security (`sdoc_security.py`)**: heuristic sender checks (blocklisted domains, carrier display-name impersonation; SPF/DKIM/DMARC are not validated), a PDF token scan, financial-data masking, and the hash-chained ledger.
 
 ### 3.7 Confidence
-Field confidence comes from the extraction path (a fixed high value for text extractions, lower with placeholders). Escalation is decided by structural conditions, not by a confidence threshold. Treat the percentage in the UI as a heuristic, not a calibrated probability.
+Field confidence comes from the extraction path (a fixed high value for text extractions, lower with placeholders). Escalation is decided by structural conditions, not by a confidence threshold. The UI labels the percentage an "extraction score" and marks it as a heuristic, not a calibrated probability. Email classification shows no percentage because the rules do not produce one.
 
 ---
 
@@ -202,13 +204,15 @@ Field confidence comes from the extraction path (a fixed high value for text ext
 | Measure | Result | Source |
 |---|---|---|
 | Official hackathon self-evaluation | 0.9946 (classification accuracy 0.987, defect precision and recall 1.00, end-to-end 46/46) | official scorer |
-| DOCSTRESS set 1 (1,299 emails) | Classification 100%; 260 of 260 SI/BL checks match the expected outcome; 0 real mismatches passed as OK | `answer key.xlsx` |
-| DOCSTRESS set 2 (951 emails) | Classification 100%; 190 of 190 SI/BL checks match | `answer key.xlsx` |
+| DOCSTRESS set 1 (1,299 emails) | Classification 100%; 260 of 260 SI/BL checks match the expected outcome; 0 false clears, 0 false alarms, 0 unneeded reviews; the differing fields named exactly on 28 of 28 mismatches | `evaluate.py`, `answer key.xlsx` |
+| DOCSTRESS set 2 (951 emails) | Classification 100%; 190 of 190 SI/BL checks match; 0 false clears; fields exact on 21 of 21 | `evaluate.py`, `answer key.xlsx` |
+| What Gemini vision adds | Offline, 80.8% (set 1) and 81.1% (set 2) of checks go to a person; with vision 71.2% and 71.6%. Vision decides 25 and 18 checks that would otherwise need a person (blurred, rotated, noisy, low-resolution scans), all of them correctly, with 0 false clears either way | `evaluate.py --vision-ablation` |
+| Rules vs LLM classifier | On all 2,250 emails, the rules, a zero-shot Gemini classifier (`gemini-3.5-flash-lite`) and a hybrid each score 100%. The LLM costs about 82 tokens per email and about 7 s per batch of 40 emails; the rules cost nothing and take under a millisecond, so the LLM fallback is off by default | `evaluate.py --llm` |
 | Speed, 520-email demo inbox | 0.35 s warm, 4.3 s cold (file reads dominate); no live model calls in the measured run | local benchmark |
 | Model use | 6 of 440 SI/BL documents (1.4%) needed Gemini vision | local benchmark |
-| Tests | 137 tests pass under pytest (`run_tests.py`), plus 47 in `security_layer/tests` | test suites |
+| Tests | 174 tests pass under pytest (`run_tests.py`), plus 47 in `security_layer/tests` | test suites |
 
-Both DOCSTRESS sets come from one generator and rules were tuned on the first, so neither is a blind test. See [COMPETITIVE_ADVANTAGE_AUDIT.md](COMPETITIVE_ADVANTAGE_AUDIT.md) and [FEATURE_AUDIT.md](FEATURE_AUDIT.md) for the full breakdowns.
+Both DOCSTRESS sets come from one generator and rules were tuned on the first, so neither is a blind test; the equal LLM score also shows how regular this synthetic data is. The full report, with confusion matrices, results by stress condition and per-field scores, is [EVALUATION.md](EVALUATION.md) (reproduce it with `python evaluate.py`, section 5.8). See also [COMPETITIVE_ADVANTAGE_AUDIT.md](COMPETITIVE_ADVANTAGE_AUDIT.md) and [FEATURE_AUDIT.md](FEATURE_AUDIT.md).
 
 ---
 
@@ -241,6 +245,9 @@ cp .env.example .env        # Windows PowerShell: copy .env.example .env
 | `GEMINI_API_KEY` | Scanned-PDF vision | Optional. Without it, scanned files are escalated as unreadable. `GEMINI_API_KEYS` (comma-separated) and `GEMINI_MODEL` are also read. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Persistence | Optional. Server-side only; never commit or expose the service-role key. `SUPABASE_BUCKET` defaults to `navis-documents`. |
 | `GMAIL_POLL_INTERVAL_SECONDS`, `GMAIL_LABEL_FILTER` | Live Gmail | Optional. |
+| `NAVIS_COPILOT_LLM` | Ask Navis | Optional. Gemini translation of free-form questions is on when a Gemini key is set; `0` turns it off. |
+| `NAVIS_LLM_CLASSIFIER` | Classification | Optional. `1` lets Gemini classify emails that no rule matches (off by default). |
+| `NAVIS_TEXT_MODEL` | Ask Navis, classifier fallback | Optional. Gemini model for text calls; default `gemini-3.5-flash-lite`. |
 
 `credentials.json` and `token.json` (Gmail OAuth) are git-ignored and stay on your machine.
 
@@ -297,7 +304,15 @@ python run_tests.py                 # or: python -m pytest tests
 python -m unittest discover -s security_layer/tests -t .
 cd web && npm run typecheck
 ```
-The test suite never touches a real Supabase project, even if your keys are in `.env` (set `NAVIS_ALLOW_LIVE_STORE=1` only if you really want that).
+The test suite never touches a real Supabase project or calls Gemini, even if your keys are in `.env` (set `NAVIS_ALLOW_LIVE_STORE=1` or `NAVIS_ALLOW_LIVE_LLM=1` only if you really want that).
+
+**Evaluate against the answer keys.** `evaluate.py` runs the full pipeline on a labelled folder and scores it against its answer-key spreadsheet; it writes [EVALUATION.md](EVALUATION.md) and `eval_results.json`:
+
+```bash
+python evaluate.py --set "DOCSTRESS 1" "../Test doc" "path/to/answer key.xlsx" --set "DOCSTRESS 2" "../Test-doc-2" "../Test-doc-2/answer key.xlsx" --vision-ablation --llm --llm-sample 0
+```
+
+`--vision-ablation` also runs each set offline to measure what Gemini vision changes; `--llm` classifies the emails with Gemini as well, to compare rules, LLM and hybrid (answers are cached in `.cache/eval_llm_cache.json`, so a rerun is free); `--price-in`/`--price-out` (USD per million tokens) add a cost line. It never writes to Supabase.
 
 ### 5.9 Enable Supabase persistence
 
@@ -329,7 +344,7 @@ Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and optionally `GEMINI_API_KEY` 
 | `POST /api/emails/{id}/send-amendment` | Reviewer sends an amendment or a request for missing documents |
 | `POST /api/emails/{id}/action` | Record a decision (Override, Corrected document received) |
 | `GET /api/audit` | Ledger blocks and integrity |
-| `GET /api/copilot?q=` | Ask Navis |
+| `GET /api/copilot?q=&ctx=&tz=` | Ask Navis (`ctx`: the shipment the previous answer was about; `tz`: browser offset for "today") |
 | `GET /api/datasets`, `GET/DELETE /api/datasets/{id}` | Dataset list, info, delete |
 | `POST /api/datasets/import` | Folder import through the API (local mode) |
 | `POST /api/datasets/uploads`, `POST /api/datasets/{id}/finalize` | Browser-direct import with Supabase |
@@ -365,12 +380,13 @@ Interactive OpenAPI docs are at `http://localhost:8000/docs` when the API runs.
 
 - **Standards posture.** NavisAI is designed with reference to ISO/IEC 42001, ISO/IEC 27001, DCSA, the EU AI Act principles and SOC 2 criteria. It holds **no certification or attestation** against any of them and does not implement DCSA eBL. See [STANDARDS_ALIGNMENT.md](STANDARDS_ALIGNMENT.md) for an evidence-based assessment and its gaps.
 - **No authentication yet.** The API has no login or roles, CORS is open, and the reviewer name is a fixed default. Do not put real customer data on a public deployment until that is added.
-- **Third-party AI.** Scanned pages are sent to the Google Gemini API. There is no data-processing agreement, residency decision or retention policy yet. Text documents are processed locally.
+- **Third-party AI.** Scanned pages are sent to the Google Gemini API, and so is the text of an Ask Navis question the rules do not recognise (no shipment data). There is no data-processing agreement, residency decision or retention policy yet. Text documents are processed locally.
 - **Simulated sending.** Amendment emails are recorded, not sent.
 - **The audit ledger is tamper-evident, not tamper-proof.** It detects edits to earlier entries. Locally it is an unsigned file; on Supabase a trigger blocks updates and deletes. It is not externally anchored or certified.
 - **Secrets.** `.env`, `credentials.json` and `token.json` are git-ignored. The Supabase service-role key must stay server-side.
 - **Large folders on Vercel.** A function call is limited to 60 seconds, so a folder with thousands of emails may not finish loading in one request. Locally there is no such limit.
 - **Confidence and risk figures are heuristics.** The demurrage and exposure numbers use assumed constants.
+- **Sender checks are heuristics.** The Trust Gateway starts nine named freight domains at a higher trust score and does not validate SPF, DKIM or DMARC.
 
 ---
 

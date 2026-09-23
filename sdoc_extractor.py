@@ -514,7 +514,11 @@ Return ONLY a JSON object:
 
     def _parse_container_count(self, raw: str) -> Optional[int]:
         raw = raw.strip()
-        # Matches patterns like "6 x 40'HC", "10 x 20'FCL", "4x40", "6"
+        # Equipment groups such as "2 x 20'GP, 3 x 40'HC" or "2x20GP/3x40HC": count every group, not just the first.
+        groups = re.findall(r"(\d+)\s*[x×*]\s*\d{2}", raw, re.IGNORECASE)
+        if groups:
+            return sum(int(n) for n in groups)
+        # Matches patterns like "6 containers", "10 FCL", "6"
         m = re.search(r"(\d+)\s*(?:x|\*|\bcontainers?\b|\bunits?\b|\bfcl\b)", raw, re.IGNORECASE)
         if m:
             return int(m.group(1))

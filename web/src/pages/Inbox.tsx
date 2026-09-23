@@ -1,9 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { Download, FileText, Mail, Paperclip, Search, Sparkles, Zap } from 'lucide-react'
+import { Download, FileText, Mail, Paperclip, Search, Zap } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFly } from '@/components/Fly'
 import { SimulateGmailModal } from '@/components/SimulateGmailModal'
-import { Badge, Button, Empty, PageHeader, Progress, StatusBadge, type Tone, ease } from '@/components/ui'
+import { Badge, Button, Empty, PageHeader, StatusBadge, type Tone, ease } from '@/components/ui'
 import type { Page } from '@/lib/nav'
 import { useApp } from '@/lib/store'
 import type { Category, EmailDetail, EmailRow } from '@/lib/types'
@@ -11,12 +11,6 @@ import { CATEGORY_LABEL, cn, senderName } from '@/lib/utils'
 
 const CAT_TONE: Record<Category, Tone> = { BL_COMPARISON: 'info', SI_REQUEST: 'brand', INVOICE_QUERY: 'neutral', GENERAL: 'neutral', SPAM: 'warn' }
 const CATS: (Category | 'ALL')[] = ['ALL', 'BL_COMPARISON', 'SI_REQUEST', 'INVOICE_QUERY', 'GENERAL', 'SPAM']
-
-function classifyConfidence(e: EmailRow) {
-  if (e.category === 'BL_COMPARISON' && e.attachments.length >= 2) return 0.99
-  if (e.category === 'SPAM') return 0.96
-  return e.attachments.length ? 0.95 : 0.91
-}
 
 function Expanded({ row, go }: { row: EmailRow; go: (p: Page, id?: string, auto?: boolean) => void }) {
   const { getDetail } = useApp()
@@ -30,7 +24,6 @@ function Expanded({ row, go }: { row: EmailRow; go: (p: Page, id?: string, auto?
       a = false
     }
   }, [row.id, getDetail])
-  const conf = classifyConfidence(row)
   return (
     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.35, ease }} className="overflow-hidden">
       <div className="grid gap-6 border-t border-white/[0.06] bg-white/[0.015] px-6 py-5 lg:grid-cols-[1.6fr_1fr]">
@@ -41,12 +34,12 @@ function Expanded({ row, go }: { row: EmailRow; go: (p: Page, id?: string, auto?
         </motion.div>
         <motion.div initial={{ x: 18, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.14, duration: 0.35, ease }} className="space-y-5">
           <div>
-            <div className="eyebrow mb-2 flex items-center gap-1.5"><Sparkles className="size-3 text-sky" /> AI classification</div>
-            <div className="mb-2 flex items-center justify-between">
+            <div className="eyebrow mb-2">Classification</div>
+            <div className="mb-1.5 flex items-center justify-between">
               <Badge tone={CAT_TONE[row.category]}>{CATEGORY_LABEL[row.category]}</Badge>
-              <span className="num text-xs text-ink2">{Math.round(conf * 100)}%</span>
+              <span className="text-[11px] text-ink3">rule-based</span>
             </div>
-            <Progress value={conf} tone="sky" />
+            <div className="text-[11.5px] text-ink3">Decided by fixed rules on the subject, body and attachment names.</div>
           </div>
           <div>
             <div className="eyebrow mb-2">Attachments</div>

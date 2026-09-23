@@ -42,11 +42,21 @@ def sender_address(sender: Optional[str]) -> Optional[str]:
     return addr if "@" in addr and not addr.startswith("@") and not addr.endswith("@") else None
 
 
+# Gate 8 ("discrepancy_plausibility") judges only the document mismatch: it holds a mismatch from a trusted sender and
+# rejects one from a sender with no trust history. Neither is a finding about the sender's security.
+MISMATCH_GATE = "discrepancy_plausibility"
+
+
+def security_rejection(gateway: Optional[Dict[str, Any]]) -> bool:
+    """True when the Trust Gateway rejected the email at a security gate (not merely because of the mismatch)."""
+    return bool(gateway) and not gateway.get("accepted") and not gateway.get("held") and gateway.get("failed_gate") != MISMATCH_GATE
+
+
 def decide(result: Dict[str, Any], gateway: Optional[Dict[str, Any]] = None) -> Tuple[str, str]:
     """Policy for one processed email. `gateway` is the Trust Gateway verdict when one exists
     ({"accepted", "held", "failed_gate"}); a sender the gateway rejected at a security gate is never
-    contacted. A hold caused only by the document mismatch itself does not block, because that hold
-    is the gateway's normal handling of any single mismatch."""
+    contacted. A hold or rejection caused only by the document mismatch itself (gate 8) does not block,
+    because asking the sender to correct the document is the right response to any mismatch."""
     if result.get("category") != "BL_COMPARISON":
         return NONE, "not an SI/BL check"
     status = result.get("status")
@@ -54,7 +64,7 @@ def decide(result: Dict[str, Any], gateway: Optional[Dict[str, Any]] = None) -> 
         return NONE, "documents match"
     if status == "NEEDS_REVIEW":
         return HOLD, f"needs a person: {(result.get('review_reason') or 'review').replace('_', ' ')}"
-    if gateway and not gateway.get("accepted") and not gateway.get("held"):
+    if security_rejection(gateway):
         return NEVER, f"sender rejected by the Trust Gateway at gate '{gateway.get('failed_gate')}'"
     if not sender_address(result.get("sender")):
         return NEVER, "no usable sender address"
@@ -70,7 +80,7 @@ def decide(result: Dict[str, Any], gateway: Optional[Dict[str, Any]] = None) -> 
 def send_block(result: Dict[str, Any], gateway: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """Why an amendment must not be emailed for this case, or None when it may be. Applies to automatic
     and to reviewer-triggered sends alike."""
-    if gateway and not gateway.get("accepted") and not gateway.get("held"):
+    if security_rejection(gateway):
         return f"sender rejected by the Trust Gateway at gate '{gateway.get('failed_gate')}'"
     if not sender_address(result.get("sender")):
         return "no usable sender address"

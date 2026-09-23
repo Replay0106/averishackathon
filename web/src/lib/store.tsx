@@ -65,7 +65,7 @@ interface Ctx {
   getDetail: (id: string) => Promise<EmailDetail | null>
   act: (id: string, action: string, details?: Record<string, unknown>) => Promise<void>
   sendAmendment: (id: string) => Promise<{ ok: boolean; error?: string; recipient?: string }>
-  ask: (q: string) => Promise<CopilotReply>
+  ask: (q: string, ctx?: string) => Promise<CopilotReply>
   refreshAudit: () => Promise<void>
   refresh: () => Promise<void>
   simulateEmail: (opts: { has_discrepancy?: boolean; booking_ref?: string; kind?: string }) => Promise<{ status: string; email_id: string; dataset_id: string; message: string; result?: any } | null>
@@ -258,17 +258,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const ask = useCallback(
-    async (q: string): Promise<CopilotReply> => {
-      const r = await api<CopilotReply>(withDs(`/api/copilot?q=${encodeURIComponent(q)}`))
+    // ctx: the email the previous answer was about, so follow-ups like "why is it flagged?" work.
+    async (q: string, ctx?: string): Promise<CopilotReply> => {
+      const params = new URLSearchParams({ q, tz: String(-new Date().getTimezoneOffset()) })
+      if (ctx) params.set('ctx', ctx)
+      const r = await api<CopilotReply>(withDs(`/api/copilot?${params}`), undefined, 90000)
       if (r) return r
-      const m = q.match(/SHP-\d{4}/i)
-      const row = m && emails.find((e) => e.shipment.toUpperCase() === m[0].toUpperCase())
-      if (!row) return { kind: 'help', message: "Ask about a shipment, e.g. 'Why is SHP-2048 flagged?'" }
+      // Offline (snapshot) mode: only questions about one shipment can be answered.
+      const m = q.match(/SHP[\s#-]*(\d{3,6})/i)
+      const row = m && emails.find((e) => e.shipment.toUpperCase() === `SHP-${m[1]}`)
+      if (!row) return { kind: 'help', message: 'The server did not respond, so only questions about one shipment (e.g. SHP-2048) can be answered.' }
       const d = await getDetail(row.id)
       if (!d || d.category !== 'BL_COMPARISON') return { kind: 'not_comparison', shipment: row.shipment, category: row.category, message: `${row.shipment} is classified ${row.category}; no SI/BL comparison applies.` }
       if (d.status === 'NEEDS_REVIEW') return { kind: 'review', shipment: row.shipment, email: row.id, reason: d.review_reason ?? '', confidence: d.confidence, recommendation: 'Escalate to a human reviewer.' }
       const bad = d.comparison.filter((c) => !c.match && !c.missing)
-      if (!bad.length) return { kind: 'clear', shipment: row.shipment, email: row.id, message: 'No mismatch detected. All seven fields match between SI and draft BL.' }
+      if (!bad.length) return { kind: 'clear', shipment: row.shipment, email: row.id, message: 'No mismatch detected. All seven fields match between the SI and the draft BL.' }
       return { kind: 'mismatch', shipment: row.shipment, email: row.id, issues: bad, evidence: d.attachments, recommendation: 'Request a corrected draft BL from the sender.' }
     },
     [emails, getDetail, withDs],

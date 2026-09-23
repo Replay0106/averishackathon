@@ -32,6 +32,8 @@ from api import importer
 from api.gateway_routes import bootstrap_from_dataset
 from api.gateway_routes import router as gateway_router
 from api.gmail_ingest import gmail_router
+import sdoc_copilot
+import sdoc_llm
 import sdoc_store
 from sdoc_amendment import SEND, build_manual_message, build_message, decide as decide_amendment, send_block
 from sdoc_classifier import EmailClassifier, is_draft_request
@@ -117,7 +119,7 @@ class Dataset:
         self.timing: Dict[str, float] = {}
         self.job: Dict[str, Any] = {"status": "ready", "done": 0, "total": 0, "failed": []}
         self.amend_lock = threading.Lock()
-        self.amend_done = False
+        self.amend_seen: set = set()  # emails whose automatic amendment has been decided
         if self.id == "demo":
             self._seed_cache_from_snapshot()
 
@@ -343,27 +345,58 @@ def _ledger_ref(d: Dataset, eid: str) -> str:
     return eid if d.id == "demo" else f"{d.id}:{eid}"
 
 
+def gateway_key(d: Dataset, eid: str) -> str:
+    """The Trust Gateway's id for an email. One gateway serves every dataset, so ids are scoped by dataset, except
+    for the demo inbox and Gmail messages (a Gmail message id is unique, and the same message is shown in both the
+    Gmail dataset and the demo inbox, so it must pass the gateway once)."""
+    return eid if d.id == "demo" or d.kind == "gmail" else f"{d.id}:{eid}"
+
+
+_gateway_lock = threading.Lock()
+
+
+def ensure_gateway(d: Dataset, live: Optional[set] = None) -> int:
+    """Run every email of a dataset that the Trust Gateway has not seen through it. `live` names emails that just
+    arrived: only those are rate limited; an imported folder is an archive read in one go, not a flood (the same
+    reasoning as the demo bootstrap). Returns how many emails were newly checked."""
+    from api import gateway_routes as gr
+
+    live = live or set()
+    added = 0
+    with _gateway_lock:
+        for eid in d.loader.get_email_ids():
+            key = gateway_key(d, eid)
+            if key in gr.GATEWAY.decisions_by_email_id:
+                continue
+            email = d.loader.get_email(eid)
+            try:
+                gr.GATEWAY.ingest(key, email.get("from", ""), email.get("subject", ""), run_email(d, eid), skip_rate_limit=eid not in live)
+                added += 1
+            except Exception as e:  # noqa: BLE001 — the email is still processed; it just has no gateway verdict
+                logger.warning("Trust Gateway could not check %s: %s", key, e)
+        if added:
+            gr.GATEWAY.flush_ledger()
+    return added
+
+
 def _gateway_verdict(d: Dataset, eid: str) -> Optional[Dict[str, Any]]:
-    """The Trust Gateway's decision for an email; only the demo inbox is run through the gateway."""
-    if d.kind != "demo":
-        return None
+    """The Trust Gateway's decision for an email, or None when it has not been checked."""
     try:
         from api import gateway_routes as gr
-        dec = gr.GATEWAY.decisions_by_email_id.get(eid)
+        dec = gr.GATEWAY.decisions_by_email_id.get(gateway_key(d, eid))
     except Exception:
         return None
     return None if dec is None else {"accepted": dec.accepted, "held": dec.held, "failed_gate": dec.failed_gate}
 
 
 def ensure_amendments(d: Dataset) -> None:
-    """Send (record) the automatic amendments for a dataset once. The outbox is durable and keyed by
-    the exact differences, so a restart or a repeat call never sends the same amendment twice."""
-    if d.amend_done:
-        return
+    """Send (record) the automatic amendments for every email of a dataset not handled yet, including emails that
+    arrive later. Each email passes the Trust Gateway first. The outbox is durable and keyed by the exact
+    differences, so a restart or a repeat call never sends the same amendment twice."""
+    ensure_gateway(d)
     with d.amend_lock:
-        if d.amend_done:
-            return
-        for eid in d.loader.get_email_ids():
+        todo = [e for e in d.loader.get_email_ids() if e not in d.amend_seen]
+        for eid in todo:
             r = run_email(d, eid)
             if r["category"] != "BL_COMPARISON" or r["status"] != "MISMATCH":
                 continue
@@ -386,7 +419,7 @@ def ensure_amendments(d: Dataset) -> None:
                 outbox.discard(row["id"])
                 raise
             outbox.attach_block(row["id"], block["index"])
-        d.amend_done = True
+        d.amend_seen.update(todo)
 
 
 def _amendment_view(a: Optional[Dict[str, Any]], full: bool = False) -> Optional[Dict[str, Any]]:
@@ -639,37 +672,36 @@ def record(eid: str, body: Action, ds: str = "demo"):
     return {"block": block}
 
 
-def _find_target(d: Dataset, q: str) -> Optional[str]:
-    m = re.search(r"SHP-\d{4}", q, re.I)
-    if m:
-        return email_for_shipment(d, m.group(0))
-    m = re.search(r"email[_ ]?(\d{3})", q, re.I)
-    if m and f"email_{m.group(1)}" in d.loader.get_email_ids():
-        return f"email_{m.group(1)}"
-    return None
+def _copilot_source(d: Dataset) -> sdoc_copilot.Source:
+    """What Ask Navis may read for a dataset: the same results the Inbox and Cases pages show."""
+    def rows() -> List[Dict[str, Any]]:
+        d.refresh_decisions()
+        ensure_amendments(d)
+        amends = outbox.all(d.id)
+        return [_summary_row(d, run_email(d, e), amends) for e in d.loader.get_email_ids()]
+
+    def detail(eid: str) -> Dict[str, Any]:
+        d.refresh_decisions()
+        ensure_amendments(d)
+        return _apply_override(d, run_email(d, eid))
+
+    return sdoc_copilot.Source(dataset=d.name, email_ids=d.loader.get_email_ids,
+                               shipment_to_email=lambda sid: email_for_shipment(d, sid), detail=detail, rows=rows)
 
 
 @app.get("/api/copilot")
-def copilot(q: str, ds: str = "demo"):
+def copilot(q: str, ds: str = "demo", ctx: Optional[str] = None, tz: int = 0):
+    """Ask Navis. Answers are read from the verification results. A question the rules do not recognise may be
+    translated by Gemini into a supported query (only the question text is sent; NAVIS_COPILOT_LLM=0 turns this off).
+    ctx: email id the previous answer was about (for follow-ups like "why is it flagged?").
+    tz: the browser's offset from UTC in minutes (for "today")."""
     d = ds_of(ds)
-    eid = _find_target(d, q)
-    if not eid:
-        return {"kind": "help", "message": "Ask about a shipment, e.g. 'Why is SHP-2048 flagged?'"}
-    r = run_email(d, eid)
-    if r["category"] != "BL_COMPARISON":
-        return {"kind": "not_comparison", "shipment": r["shipment"], "category": r["category"], "message": f"{r['shipment']} is classified {r['category']}; no SI/BL comparison applies."}
-    bad = [c for c in r["comparison"] if not c["match"] and not c["missing"]]
-    if r["status"] == "NEEDS_REVIEW":
-        rec = {
-            "missing_attachment": "Request the missing document from the sender.",
-            "wrong_doc_type": "Ask the sender to resend the correct SI and draft BL.",
-            "unreadable": "Request a legible re-upload or clean PDF.",
-            "missing_value": "Confirm the missing field with the shipper before verification.",
-        }.get(r["review_reason"], "Escalate to a human reviewer.")
-        return {"kind": "review", "shipment": r["shipment"], "email": eid, "reason": r["review_reason"], "confidence": r["confidence"], "recommendation": rec}
-    if not bad:
-        return {"kind": "clear", "shipment": r["shipment"], "email": eid, "message": "No mismatch detected. All seven fields match between SI and draft BL."}
-    return {"kind": "mismatch", "shipment": r["shipment"], "email": eid, "issues": bad, "evidence": r["attachments"], "recommendation": "Request a corrected draft BL from the sender."}
+    if d.kind == "demo":
+        _sync_injected_emails(d)
+    args = dict(context=ctx, tz_minutes=max(-840, min(840, tz)))
+    if os.environ.get("NAVIS_COPILOT_LLM", "1") != "0" and sdoc_llm.available():
+        return sdoc_copilot.answer_with_llm(q, _copilot_source(d), **args)
+    return sdoc_copilot.answer(q, _copilot_source(d), **args)
 
 
 # ---------------------------------------------------------------- dataset import

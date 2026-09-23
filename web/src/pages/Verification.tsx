@@ -7,7 +7,7 @@ import { Badge, Button, PageHeader, Typewriter, ease, spring } from '@/component
 import type { Page } from '@/lib/nav'
 import { useApp } from '@/lib/store'
 import type { EmailDetail } from '@/lib/types'
-import { cn, explain, fmtValue, REASON_DETAIL, REASON_LABEL, sleep } from '@/lib/utils'
+import { cn, explain, fmtValue, REASON_DETAIL, REASON_LABEL, SCORE_HINT, sleep } from '@/lib/utils'
 
 type Phase = 'idle' | 'received' | 'classified' | 'extracting' | 'comparing' | 'redline' | 'decided'
 const STAGES = [
@@ -330,7 +330,7 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
                       {d.status === 'OK' ? 'Release to compliance gate' : d.status === 'MISMATCH' ? 'Amendment request to the sender' : 'Route to Human Review Queue'}
                     </div>
                   </div>
-                  <div className="num mb-4 text-[11px] text-ink3">Confidence {Math.round(d.confidence * 100)}%</div>
+                  <div className="num mb-4 text-[11px] text-ink3" title={SCORE_HINT}>Extraction score {Math.round(d.confidence * 100)}% · heuristic</div>
                   <div className="flex flex-wrap gap-2">
                     {d.status === 'MISMATCH' && <Button variant="primary" icon={<ArrowRight className="size-3.5" />} onClick={() => go('cases', d.id)}>Open case</Button>}
                     {d.status === 'OK' && <Button variant="primary" icon={<ArrowRight className="size-3.5" />} onClick={() => go('compliance', d.id)}>Open compliance gate</Button>}

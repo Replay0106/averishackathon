@@ -19,9 +19,9 @@ interface SenderSecurityReport {
   outcome?: 'accepted' | 'rejected' | 'held'
 }
 
-async function fetchSenderSecurity(emailId: string): Promise<SenderSecurityReport> {
+async function fetchSenderSecurity(emailId: string, ds: string): Promise<SenderSecurityReport> {
   try {
-    const res = await fetch(resolveApiPath(`/api/gateway/email-check/${encodeURIComponent(emailId)}`))
+    const res = await fetch(resolveApiPath(`/api/gateway/email-check/${encodeURIComponent(emailId)}?ds=${encodeURIComponent(ds)}`))
     if (!res.ok) return { checked: false }
     return (await res.json()) as SenderSecurityReport
   } catch {
@@ -72,7 +72,7 @@ function evaluate(d: EmailDetail): CheckResult[] {
 }
 
 export default function Compliance({ go, id }: { go: (p: Page, id?: string) => void; id?: string }) {
-  const { emails, getDetail } = useApp()
+  const { emails, getDetail, dataset } = useApp()
   const comps = useMemo(() => emails.filter((e) => e.category === 'BL_COMPARISON' && e.status !== 'NEEDS_REVIEW'), [emails])
   const cur = id && comps.some((c) => c.id === id) ? id : comps.find((c) => c.status === 'OK')?.id ?? comps[0]?.id
   const [d, setD] = useState<EmailDetail | null>(null)
@@ -82,7 +82,7 @@ export default function Compliance({ go, id }: { go: (p: Page, id?: string) => v
 
   const start = useCallback(async (detail: EmailDetail) => {
     const me = ++run.current
-    const [docChecks, sender] = await Promise.all([evaluate(detail), fetchSenderSecurity(detail.id)])
+    const [docChecks, sender] = await Promise.all([evaluate(detail), fetchSenderSecurity(detail.id, dataset)])
     if (run.current !== me) return
     const sc = senderSecurityCheck(sender)
     const c = sc ? [...docChecks, sc] : docChecks
@@ -93,7 +93,7 @@ export default function Compliance({ go, id }: { go: (p: Page, id?: string) => v
       if (run.current !== me) return
       setN(i)
     }
-  }, [])
+  }, [dataset])
 
   useEffect(() => {
     if (!cur) return

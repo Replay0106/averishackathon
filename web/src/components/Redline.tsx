@@ -3,7 +3,7 @@ import { AlertTriangle, Check } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Badge, Typewriter, ease } from './ui'
 import type { EmailDetail } from '@/lib/types'
-import { cn, explain, fmtValue } from '@/lib/utils'
+import { cn, evidenceRef, explain, fmtValue } from '@/lib/utils'
 
 export function Redline({ d }: { d: EmailDetail }) {
   const firstBad = d.comparison.findIndex((c) => !c.match)
@@ -102,7 +102,7 @@ export function Redline({ d }: { d: EmailDetail }) {
                   const e = ev as typeof row.si_evidence
                   return (
                     <div key={t as string} className="num rounded-md bg-white/[0.03] px-3 py-2 text-[11px] text-ink2">
-                      <span className="mr-2 text-ink3">{t as string} · L{e?.line_number ?? '–'}</span>
+                      <span className="mr-2 text-ink3">{t as string} · {evidenceRef(e, (t === 'SI' ? d.si : d.bl)?.is_scanned)}</span>
                       {e?.snippet ?? 'not found'}
                     </div>
                   )

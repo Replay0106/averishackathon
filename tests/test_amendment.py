@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from sdoc_amendment import (
-    HOLD, NEVER, NONE, SEND, AmendmentOutbox, build_message, decide, sender_address,
+    HOLD, NEVER, NONE, SEND, AmendmentOutbox, build_message, decide, send_block, sender_address,
 )
 
 
@@ -46,6 +46,15 @@ class TestPolicy(unittest.TestCase):
 
     def test_mismatch_hold_by_gateway_does_not_block(self):
         self.assertEqual(decide(result(["gross_weight_kg"]), {"accepted": False, "held": True, "failed_gate": "discrepancy_plausibility"})[0], SEND)
+
+    def test_mismatch_rejection_from_an_unknown_sender_does_not_block(self):
+        # Gate 8 rejects a mismatch from a sender with no trust history; that judges the document, not the sender.
+        verdict = {"accepted": False, "held": False, "failed_gate": "discrepancy_plausibility"}
+        self.assertEqual(decide(result(["gross_weight_kg"]), verdict)[0], SEND)
+        self.assertIsNone(send_block(result(["gross_weight_kg"]), verdict))
+        blocked = {"accepted": False, "held": False, "failed_gate": "authentication"}
+        self.assertEqual(decide(result(["gross_weight_kg"]), blocked)[0], NEVER)
+        self.assertIn("authentication", send_block(result(["gross_weight_kg"]), blocked))
 
     def test_missing_sender_address_is_never_sent(self):
         self.assertEqual(decide(result(["gross_weight_kg"], sender=""))[0], NEVER)

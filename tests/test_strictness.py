@@ -42,10 +42,29 @@ class TestPortStrictness(unittest.TestCase):
         self.assertTrue(ports_match("NHAVA SHEVA, INDIA", "NHAVA SHEVA, INDIA (INNSA)"))
         self.assertTrue(ports_match("PORT KELANG", "PORT KLANG"))
 
+    def test_other_names_for_the_same_port_match(self):
+        for a, b in [("PORT KLANG", "KLANG, MALAYSIA"), ("Port Klang (MYPKG)", "MYPKG"), ("HO CHI MINH CITY, VIETNAM", "SAIGON"),
+                     ("NINGBO", "NINGBO ZHOUSHAN, CHINA"), ("BUSAN", "PUSAN, KOREA"), ("CHITTAGONG", "CHATTOGRAM"),
+                     ("NHAVA SHEVA, INDIA", "JNPT"), ("TANJUNG PELEPAS", "PTP, JOHOR")]:
+            self.assertTrue(ports_match(a, b), (a, b))
+
     def test_changed_port_is_a_mismatch(self):
         self.assertFalse(ports_match("Singapore", "Singapore Changed"))
         self.assertFalse(ports_match("Long Beach", "Long Beach Changed"))
         self.assertFalse(ports_match("TOKYO, JAPAN", "OSAKA, JAPAN"))
+        # Nearby or related ports are different places, and aliases only replace whole words.
+        for a, b in [("JEBEL ALI", "DUBAI"), ("PORT KLANG", "PORT DICKSON"), ("YANTIAN", "SHENZHEN"), ("PENANG", "PORT KLANG"),
+                     ("KLANG", "KLANGSTON")]:
+            self.assertFalse(ports_match(a, b), (a, b))
+
+
+class TestContainerCount(unittest.TestCase):
+    def test_every_equipment_group_is_counted(self):
+        parse = FieldExtractor(api_key="unused")._parse_container_count
+        for raw, n in [("2 x 20'GP, 3 x 40'HC", 5), ("2x20GP/3x40HC", 5), ("2 X 40' HC 3 X 20' GP", 5), ("6 x 40'HC", 6),
+                       ("10 x 20'FCL", 10), ("4x40", 4), ("6", 6), ("3 containers", 3), ("1 x 40'HC (MSKU1234567)", 1),
+                       ("MSKU1234567, TGHU7654321", 2)]:
+            self.assertEqual(parse(raw), n, raw)
 
     def test_reconciler_flags_changed_port(self):
         res = DocumentReconciler().reconcile(

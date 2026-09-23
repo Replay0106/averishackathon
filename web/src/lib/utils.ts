@@ -63,6 +63,16 @@ export function explain(row: { key: string; label: string; si: unknown; bl: unkn
   return `The ${row.label.toLowerCase()} on the Bill of Lading (${b}) does not match the Shipping Instruction (${s}).`
 }
 
+// The score shown next to a case: an average of the extraction rules' own certainty, capped for review cases.
+// It is not a calibrated probability, and no decision depends on it (cases are routed by their status and reason).
+export const SCORE_HINT = 'Heuristic extraction score, not a calibrated probability. Decisions do not depend on it.'
+
+// Where a value was read. Values from scanned documents come from Gemini vision, which gives no line reference.
+export function evidenceRef(ev: { line_number?: number } | null | undefined, scanned?: boolean): string {
+  if (ev?.line_number != null) return `L${ev.line_number}`
+  return scanned ? 'vision · no line ref' : '–'
+}
+
 export function senderName(s: string) {
   return s.split('@')[0].replace(/[._]/g, ' ')
 }

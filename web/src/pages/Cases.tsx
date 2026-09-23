@@ -5,7 +5,7 @@ import { Badge, Button, Drawer, Empty, Modal, PageHeader, Progress, StatusBadge,
 import type { Page } from '@/lib/nav'
 import { useApp } from '@/lib/store'
 import type { EmailDetail, EmailRow, Resolution } from '@/lib/types'
-import { cn, explain, FIELD_LABEL, fmtValue, REASON_DETAIL, REASON_LABEL } from '@/lib/utils'
+import { cn, evidenceRef, explain, FIELD_LABEL, fmtValue, REASON_DETAIL, REASON_LABEL, SCORE_HINT } from '@/lib/utils'
 
 const FIELDS = Object.keys(FIELD_LABEL)
 const DECIDED = ['CONFIRM_AI_RESULT', 'OVERRIDE_RESULT', 'AMENDMENT_CONFIRMED']
@@ -139,7 +139,7 @@ function CaseDrawer({ row, onClose }: { row: EmailRow | null; onClose: () => voi
                 {bad.map((c) => <Badge key={c.key} tone="bad">{c.label}</Badge>)}
               </div>
               <div className="mt-3 flex items-center gap-3">
-                <span className="num text-[13px]">Confidence {Math.round(d.confidence * 100)}%</span>
+                <span className="num text-[13px]" title={SCORE_HINT}>Extraction score {Math.round(d.confidence * 100)}%</span>
                 <Progress value={d.confidence} tone={d.confidence > 0.9 ? 'ok' : 'warn'} className="flex-1" />
               </div>
             </section>
@@ -166,8 +166,8 @@ function CaseDrawer({ row, onClose }: { row: EmailRow | null; onClose: () => voi
                 {[...bad, ...missing].map((c) => (
                   <div key={c.key} className="num rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-[11px] text-ink2">
                     <div className="mb-1 text-ink3">{c.label}</div>
-                    <div><span className="mr-2 text-emerald-300">SI L{c.si_evidence?.line_number ?? '–'}</span>{c.si_evidence?.snippet ?? 'not found'}</div>
-                    <div><span className="mr-2 text-red-300">BL L{c.bl_evidence?.line_number ?? '–'}</span>{c.bl_evidence?.snippet ?? 'not found'}</div>
+                    <div><span className="mr-2 text-emerald-300">SI {evidenceRef(c.si_evidence, d.si?.is_scanned)}</span>{c.si_evidence?.snippet ?? (d.si?.is_scanned && c.si != null ? String(c.si) : 'not found')}</div>
+                    <div><span className="mr-2 text-red-300">BL {evidenceRef(c.bl_evidence, d.bl?.is_scanned)}</span>{c.bl_evidence?.snippet ?? (d.bl?.is_scanned && c.bl != null ? String(c.bl) : 'not found')}</div>
                   </div>
                 ))}
               </div>
@@ -287,7 +287,7 @@ export default function Cases({ go, id }: { go: (p: Page, id?: string, auto?: bo
 
       <div className="panel overflow-hidden">
         <div className="grid grid-cols-[100px_minmax(0,2fr)_110px_minmax(0,1.3fr)_140px_160px] gap-4 border-b border-white/[0.07] px-6 py-3 max-lg:hidden">
-          {['Shipment', 'Issue', 'Confidence', 'Handling', tab === 'needs' ? 'Waiting' : 'Sent', 'Status'].map((h) => <div key={h} className="eyebrow">{h}</div>)}
+          {['Shipment', 'Issue', 'Score', 'Handling', tab === 'needs' ? 'Waiting' : 'Sent', 'Status'].map((h) => <div key={h} className="eyebrow" title={h === 'Score' ? SCORE_HINT : undefined}>{h}</div>)}
         </div>
         {list.length === 0 && <Empty icon={<CheckCircle2 className="size-6" />} title="Nothing here" />}
         <motion.div key={tab + field + q} initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.018 } } }}>
