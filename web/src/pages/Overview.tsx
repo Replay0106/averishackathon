@@ -82,7 +82,7 @@ export default function Overview({ go }: { go: (p: Page, id?: string, auto?: boo
                 <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink2 transition group-hover:text-ink">
                   {e.status === 'MISMATCH' ? e.defect_fields.map((f) => FIELD_LABEL[f]).join(', ') : e.review_reason?.replace(/_/g, ' ')}
                 </span>
-                <StatusBadge status={e.status} />
+                <StatusBadge status={e.status} awaiting={e.awaiting_documents} />
               </motion.button>
             ))}
           </motion.div>

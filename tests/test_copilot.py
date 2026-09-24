@@ -139,8 +139,18 @@ class DatasetQuestions(unittest.TestCase):
 
     def test_overview(self):
         stats = {s["label"]: s["value"] for s in ask("give me an overview")["stats"]}
-        self.assertEqual(stats, {"Emails": 7, "SI/BL checks": 6, "Clear": 1, "Mismatches": 3, "Need review": 2,
-                                 "Amendments sent": 2, "Needs a person": 2, "Resolved": 1})
+        self.assertEqual(stats, {"Emails": 7, "SI/BL checks": 6, "Clear": 1, "Awaiting documents": 0, "Mismatches": 3,
+                                 "Need review": 2, "Amendments sent": 2, "Needs a person": 2, "Resolved": 1})
+
+    def test_requests_without_documents_are_not_reported_as_clear(self):
+        rows = ROWS + [{**row("e8", "SHP-1008"), "awaiting_documents": True}]
+        src = source(rows)
+        self.assertEqual(cp.answer("SHP-1008", src, now=NOW)["kind"], "awaiting")
+        self.assertEqual(cp.answer("which shipments are clear", src, now=NOW)["total"], 1)
+        a = cp.answer("which requests have no documents yet", src, now=NOW)
+        self.assertEqual([i["email"] for i in a["items"]], ["e8"])
+        stats = {s["label"]: s["value"] for s in cp.answer("overview", src, now=NOW)["stats"]}
+        self.assertEqual((stats["SI/BL checks"], stats["Awaiting documents"]), (6, 1))
 
     def test_long_lists_are_cut_with_a_count(self):
         rows = [row(f"m{i}", f"SHP-{2000 + i}", "MISMATCH", fields=["consignee"]) for i in range(12)]

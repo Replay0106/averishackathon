@@ -73,7 +73,7 @@ function evaluate(d: EmailDetail): CheckResult[] {
 
 export default function Compliance({ go, id }: { go: (p: Page, id?: string) => void; id?: string }) {
   const { emails, getDetail, dataset } = useApp()
-  const comps = useMemo(() => emails.filter((e) => e.category === 'BL_COMPARISON' && e.status !== 'NEEDS_REVIEW'), [emails])
+  const comps = useMemo(() => emails.filter((e) => e.category === 'BL_COMPARISON' && e.status !== 'NEEDS_REVIEW' && !e.awaiting_documents), [emails])
   const cur = id && comps.some((c) => c.id === id) ? id : comps.find((c) => c.status === 'OK')?.id ?? comps[0]?.id
   const [d, setD] = useState<EmailDetail | null>(null)
   const [checks, setChecks] = useState<CheckResult[]>([])

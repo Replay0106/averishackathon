@@ -17,6 +17,7 @@ export interface CompareRow {
   bl: string | number | null
   match: boolean
   missing: boolean
+  compared?: boolean // false on review cases: the fields were not compared
   si_evidence: Evidence | null
   bl_evidence: Evidence | null
 }
@@ -48,6 +49,7 @@ export interface EmailRow {
   confidence: number
   attachments: string[]
   meta: Meta
+  awaiting_documents?: boolean // a request to send the draft BL, with nothing attached yet
   resolution?: Resolution | null
   amendment?: Amendment | null
   case?: CaseInfo | null
@@ -65,6 +67,7 @@ export interface Summary {
   ok: number
   mismatch: number
   needs_review: number
+  awaiting_documents?: number
   defect_fields: Record<string, number>
   avg_verify_ms?: number
 }
@@ -82,7 +85,7 @@ export interface CopilotItem { shipment: string; email: string; note: string }
 export interface CopilotStat { label: string; value: number; tone?: 'ok' | 'bad' | 'warn' }
 export interface CopilotBar { label: string; count: number; note?: string }
 export interface CopilotReply {
-  kind: 'help' | 'not_comparison' | 'review' | 'clear' | 'mismatch' | 'dataset'
+  kind: 'help' | 'not_comparison' | 'review' | 'clear' | 'mismatch' | 'dataset' | 'awaiting'
   shipment?: string
   email?: string
   message?: string

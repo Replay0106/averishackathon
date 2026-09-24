@@ -23,7 +23,8 @@ export function Redline({ d }: { d: EmailDetail }) {
         </div>
         <div>
           {d.comparison.map((c, i) => {
-            const bad = !c.match
+            const skipped = c.compared === false // a review case: this field was not compared
+            const bad = !c.match && !skipped
             const active = sel === i
             return (
               <motion.button
@@ -37,7 +38,7 @@ export function Redline({ d }: { d: EmailDetail }) {
                   active ? 'bg-white/[0.045]' : 'hover:bg-white/[0.025]',
                 )}
               >
-                {active && <motion.span layoutId="redline-sel" className={cn('absolute inset-y-0 left-0 w-[2px]', bad ? 'bg-bad' : 'bg-ok')} />}
+                {active && <motion.span layoutId="redline-sel" className={cn('absolute inset-y-0 left-0 w-[2px]', bad ? 'bg-bad' : skipped ? 'bg-white/30' : 'bg-ok')} />}
                 <div className="min-w-0">
                   <div className="eyebrow mb-1">{c.label}</div>
                   <div className={cn('num truncate text-[12.5px]', bad ? 'text-ink' : 'text-ink2')} title={String(c.si ?? '')}>
@@ -55,8 +56,8 @@ export function Redline({ d }: { d: EmailDetail }) {
                     )}
                   </AnimatePresence>
                   {!(active && bad) && (
-                    <span className={cn('grid size-6 place-items-center rounded-full border', bad ? 'border-bad/40 bg-bad/10 text-red-300' : 'border-ok/30 bg-ok/10 text-ok')}>
-                      {bad ? <span className="text-[11px] font-bold">!</span> : <Check className="size-3.5" strokeWidth={2.6} />}
+                    <span title={skipped ? 'Not compared: this case needs a person' : undefined} className={cn('grid size-6 place-items-center rounded-full border', bad ? 'border-bad/40 bg-bad/10 text-red-300' : skipped ? 'border-white/15 bg-white/[0.04] text-ink3' : 'border-ok/30 bg-ok/10 text-ok')}>
+                      {bad ? <span className="text-[11px] font-bold">!</span> : skipped ? <span className="text-[12px] font-bold leading-none">–</span> : <Check className="size-3.5" strokeWidth={2.6} />}
                     </span>
                   )}
                 </div>
@@ -74,7 +75,12 @@ export function Redline({ d }: { d: EmailDetail }) {
 
       <div className="panel h-fit p-5">
         <AnimatePresence mode="wait">
-          {row && !row.match ? (
+          {row && row.compared === false ? (
+            <motion.div key={`skip-${row.key}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="py-6 text-center">
+              <Badge dot>{row.label} not compared</Badge>
+              <p className="mt-3 text-[13px] text-ink2">This case was sent to a person before the fields were compared, so no field is reported as matching or differing.</p>
+            </motion.div>
+          ) : row && !row.match ? (
             <motion.div key={row.key} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
               <div className="mb-4 flex items-center gap-2">
                 <AlertTriangle className="size-4 text-bad" />
@@ -91,7 +97,7 @@ export function Redline({ d }: { d: EmailDetail }) {
                 </div>
               </div>
               <div className="mt-5">
-                <div className="eyebrow mb-1.5">AI Explanation</div>
+                <div className="eyebrow mb-1.5">Explanation</div>
                 <p className="text-[13px] leading-relaxed text-ink2">
                   “<Typewriter key={row.key} text={row.missing ? `The ${row.label.toLowerCase()} could not be located in one of the documents.` : explain(row)} speed={10} />”
                 </p>

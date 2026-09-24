@@ -200,7 +200,7 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
                   </div>
                   <div className="num text-[11.5px] text-ink3 max-lg:hidden">{t.toISOString().slice(11, 16)} UTC</div>
                   <div className="max-lg:hidden"><Badge tone={CAT_TONE[e.category]}>{CATEGORY_LABEL[e.category]}</Badge></div>
-                  <div>{e.category === 'BL_COMPARISON' ? <StatusBadge status={e.status} resolved={!!resolutions[e.id]} /> : <Badge>Filed</Badge>}</div>
+                  <div>{e.category === 'BL_COMPARISON' ? <StatusBadge status={e.status} resolved={!!resolutions[e.id]} awaiting={e.awaiting_documents} /> : <Badge>Filed</Badge>}</div>
                 </button>
                 <AnimatePresence initial={false}>{isOpen && <Expanded row={e} go={go} />}</AnimatePresence>
               </motion.div>

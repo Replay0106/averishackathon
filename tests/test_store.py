@@ -114,7 +114,9 @@ class TestVisionAndKv(StoreCase):
         import time
         from sdoc_extractor import FieldExtractor
         sdoc_store.set_store(self.backend)
-        FieldExtractor(api_key="")._log_call("a" * 64, "m", time.perf_counter(), error=RuntimeError("x"))
+        ex = FieldExtractor(api_key="")
+        ex.cache_path = self.tmp / "vision_cache.json"  # keep the fixture row out of the real .cache/vision_calls.jsonl
+        ex._log_call("a" * 64, "m", time.perf_counter(), error=RuntimeError("x"))
         self.assertEqual(self.backend.tables[sdoc_store.T_VCALLS][0]["outcome"], "RuntimeError")
 
     def test_kv(self):
@@ -303,6 +305,8 @@ class TestDirectUploadApi(StoreCase):
         m.DATASETS_DIR.mkdir()
         self.before = set(m.DATASETS)
         self.addCleanup(self.restore)
+        from tests.api_stores import isolate_api_stores
+        isolate_api_stores(self, self.tmp)
         from fastapi.testclient import TestClient
         self.client = TestClient(m.app)
 

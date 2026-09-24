@@ -67,16 +67,18 @@ export function Badge({ tone = 'neutral', children, className, dot }: { tone?: T
   )
 }
 
-export function statusMeta(s: Status | 'RESOLVED') {
+export function statusMeta(s: Status | 'RESOLVED' | 'AWAITING') {
   return {
     OK: { tone: 'ok' as Tone, label: 'Verified' },
+    AWAITING: { tone: 'neutral' as Tone, label: 'Awaiting docs' },
     MISMATCH: { tone: 'bad' as Tone, label: 'Discrepancy' },
     NEEDS_REVIEW: { tone: 'warn' as Tone, label: 'Needs review' },
     RESOLVED: { tone: 'info' as Tone, label: 'Resolved' },
   }[s]
 }
-export function StatusBadge({ status, resolved }: { status: Status; resolved?: boolean }) {
-  const m = statusMeta(resolved ? 'RESOLVED' : status)
+// awaiting: a request to send the draft BL with nothing attached yet, so nothing was verified.
+export function StatusBadge({ status, resolved, awaiting }: { status: Status; resolved?: boolean; awaiting?: boolean }) {
+  const m = statusMeta(resolved ? 'RESOLVED' : awaiting ? 'AWAITING' : status)
   return (
     <Badge tone={m.tone} dot>
       <AnimatePresence mode="wait" initial={false}>

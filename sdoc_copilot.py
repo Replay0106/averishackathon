@@ -161,6 +161,10 @@ def shipment_answer(src: Source, eid: str) -> Dict[str, Any]:
     if r["category"] != "BL_COMPARISON":
         return {**base, "kind": "not_comparison", "category": r["category"],
                 "message": f"{r['shipment']} is classified {r['category']}; no SI/BL comparison applies."}
+    if r.get("awaiting_documents"):
+        return {**base, "kind": "awaiting",
+                "message": f"{r['shipment']} is a request to send the draft BL for checking, with no documents attached yet. "
+                           "Nothing has been verified; the check runs when the SI and draft BL arrive."}
     handling = _handling(r)
     if r["status"] == "NEEDS_REVIEW":
         missing = [c["label"] for c in r.get("comparison", []) if c.get("missing")]
@@ -189,12 +193,14 @@ def _list_reply(title: str, rows: List[Dict[str, Any]], note: Callable[[Dict[str
 
 
 def _overview(rows: List[Dict[str, Any]], src: Source) -> Dict[str, Any]:
-    comps = [r for r in rows if r["category"] == "BL_COMPARISON"]
+    comps = [r for r in rows if r["category"] == "BL_COMPARISON" and not r.get("awaiting_documents")]
+    awaiting = sum(1 for r in rows if r["category"] == "BL_COMPARISON" and r.get("awaiting_documents"))
     buckets = Counter(bucket(r) for r in rows)
     stats = [
         {"label": "Emails", "value": len(rows)},
         {"label": "SI/BL checks", "value": len(comps)},
         {"label": "Clear", "value": sum(r["status"] == "OK" for r in comps), "tone": "ok"},
+        {"label": "Awaiting documents", "value": awaiting},
         {"label": "Mismatches", "value": sum(r["status"] == "MISMATCH" for r in comps), "tone": "bad"},
         {"label": "Need review", "value": sum(r["status"] == "NEEDS_REVIEW" for r in comps), "tone": "warn"},
         {"label": "Amendments sent", "value": sum(1 for r in rows if r.get("amendment"))},
@@ -219,8 +225,12 @@ STATUS_INTENTS = [
      "No comparison needs review.", "cases"),
     (r"mismatch|discrepanc|flagged|errors?|wrong|incorrect|problem|issue",
      "Mismatches", lambda r: r["category"] == "BL_COMPARISON" and r["status"] == "MISMATCH", _case_note, "No mismatches.", "cases"),
+    (r"awaiting doc|no doc|without doc|draft (?:bl )?requests?|not (?:yet )?(?:received|attached)",
+     "Awaiting documents", lambda r: r["category"] == "BL_COMPARISON" and bool(r.get("awaiting_documents")),
+     lambda r: "Draft BL requested, nothing attached yet", "No request is waiting for documents.", "cases"),
     (r"\bclear\b|\bok\b|\bpass(?:ed)?\b|\bclean\b|\bmatch(?:es|ed)?\b|releas",
-     "Clear shipments", lambda r: r["category"] == "BL_COMPARISON" and r["status"] == "OK", lambda r: "All seven fields match",
+     "Clear shipments", lambda r: r["category"] == "BL_COMPARISON" and r["status"] == "OK" and not r.get("awaiting_documents"),
+     lambda r: "All seven fields match",
      "No shipment is clear yet.", "compliance"),
 ]
 

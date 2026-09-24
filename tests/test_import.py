@@ -10,6 +10,7 @@ try:
     from fastapi.testclient import TestClient
     from api import importer
     from api.main import DATASETS, ROOT, app
+    from tests.api_stores import isolate_api_stores
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False
@@ -34,11 +35,17 @@ class TestImport(unittest.TestCase):
         if not FASTAPI_AVAILABLE:
             self.skipTest("fastapi not installed in current environment")
         self.tmp = Path(tempfile.mkdtemp())
+        isolate_api_stores(self)
         self.client = TestClient(app)
         self.created = []
 
     def tearDown(self):
         for ds in self.created:
+            # Let the background import finish while the stores are still patched, so it cannot write to the
+            # real ledger afterwards or trip over its deleted folder.
+            deadline = time.monotonic() + 120
+            while self.client.get(f"/api/datasets/{ds}").json()["job"]["status"] != "ready" and time.monotonic() < deadline:
+                time.sleep(0.1)
             self.client.delete(f"/api/datasets/{ds}")
         shutil.rmtree(self.tmp, ignore_errors=True)
 

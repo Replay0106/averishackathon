@@ -303,12 +303,30 @@ def _blank(d: Dataset, eid: str, email: Dict[str, Any], category: str) -> Dict[s
         "bl": None,
         "comparison": [],
         "meta": {"booking": None, "vessel": None, "oc_no": None, "carrier": "n/a"},
+        "awaiting_documents": False,
     }
+
+
+def _mark_awaiting(result: Dict[str, Any], email: Dict[str, Any]) -> Dict[str, Any]:
+    """Flag a request to send the draft BL that has nothing attached. The scored outcome stays OK (nothing is wrong),
+    but nothing was verified, so the app shows it as awaiting documents and lists no field comparison."""
+    awaiting = bool(result.get("category") == "BL_COMPARISON" and result.get("status") == "OK"
+                    and not email.get("attachments") and is_draft_request(email))
+    result["awaiting_documents"] = awaiting
+    if awaiting:
+        result["comparison"] = []
+    return result
 
 
 def run_email(d: Dataset, eid: str) -> Dict[str, Any]:
     if eid in d.cache:
-        return d.cache[eid]
+        r = d.cache[eid]
+        if "awaiting_documents" not in r:  # results seeded from the snapshot predate these fields
+            _mark_awaiting(r, d.loader.get_email(eid))
+            for c in r.get("comparison", []):
+                c["compared"] = r.get("status") != "NEEDS_REVIEW"
+                c["match"] = bool(c.get("match")) and c["compared"]
+        return r
     t0 = time.perf_counter()
     email = d.loader.get_email(eid)
     category = classifier.classify_email(email)
@@ -321,15 +339,18 @@ def run_email(d: Dataset, eid: str) -> Dict[str, Any]:
             entry = reconciler.reconcile(email_id=eid, category=category, si_att=si, bl_att=bl, si_fields=si_f, bl_fields=bl_f,
                                          draft_request=is_draft_request(email), ambiguous_documents=ambiguous)
             result.update(status=entry["status"], review_reason=entry["review_reason"], defect_fields=entry["defect_fields"])
+            _mark_awaiting(result, email)
             result["si"], result["bl"] = _fields_dict(si_f), _fields_dict(bl_f)
             result["confidence"] = _confidence(entry["status"], entry["review_reason"], si_f, bl_f)
             result["meta"] = _meta((bl.text if bl else "") + "\n" + (si.text if si else ""))
-            for key, label in FIELDS:
+            for key, label in ([] if result["awaiting_documents"] else FIELDS):
                 sv = getattr(si_f, key, None) if si_f else None
                 bv = getattr(bl_f, key, None) if bl_f else None
+                # A review case stops before the fields are compared, so no field of it is reported as matching.
+                compared = entry["status"] != "NEEDS_REVIEW"
                 result["comparison"].append({
-                    "key": key, "label": label, "si": sv, "bl": bv,
-                    "match": key not in entry["defect_fields"] and sv is not None and bv is not None,
+                    "key": key, "label": label, "si": sv, "bl": bv, "compared": compared,
+                    "match": compared and key not in entry["defect_fields"] and sv is not None and bv is not None,
                     "missing": sv is None or bv is None,
                     "si_evidence": (si_f.evidence_spans.get(key) if si_f else None),
                     "bl_evidence": (bl_f.evidence_spans.get(key) if bl_f else None),
@@ -460,7 +481,8 @@ def _apply_override(d: Dataset, r: Dict[str, Any]) -> Dict[str, Any]:
 
 def _summary_row(d: Dataset, r: Dict[str, Any], amends: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     amends = amends if amends is not None else {}
-    keys = ("id", "shipment", "sender", "subject", "category", "status", "review_reason", "defect_fields", "confidence", "attachments", "meta")
+    keys = ("id", "shipment", "sender", "subject", "category", "status", "review_reason", "defect_fields", "confidence", "attachments", "meta",
+            "awaiting_documents")
     return {k: r[k] for k in keys} | {
         "resolution": _resolution(d, r["id"], amends),
         "amendment": _amendment_view(amends.get(r["id"])),
@@ -590,11 +612,14 @@ def summary(response: Response, ds: str = "demo"):
         for f in r["defect_fields"]:
             fields[f] = fields.get(f, 0) + 1
     comps = [r for r in rows if r["category"] == "BL_COMPARISON"]
+    awaiting = sum(bool(r.get("awaiting_documents")) for r in comps)
     return {
         "total": len(rows),
         "categories": cats,
-        "comparisons": len(comps),
-        "ok": sum(r["status"] == "OK" for r in comps),
+        # document checks exclude requests that have no documents yet; those are counted separately
+        "comparisons": len(comps) - awaiting,
+        "ok": sum(r["status"] == "OK" and not r.get("awaiting_documents") for r in comps),
+        "awaiting_documents": awaiting,
         "mismatch": sum(r["status"] == "MISMATCH" for r in comps),
         "needs_review": sum(r["status"] == "NEEDS_REVIEW" for r in comps),
         "defect_fields": fields,

@@ -50,7 +50,7 @@ function CaseDrawer({ row, onClose }: { row: EmailRow | null; onClose: () => voi
 
   const resolved = row ? resolutions[row.id] : undefined
   const bucket = row ? bucketOf(row, resolutions) : 'needs'
-  const bad = d?.comparison.filter((c) => !c.match && !c.missing) ?? []
+  const bad = d?.comparison.filter((c) => !c.match && !c.missing && c.compared !== false) ?? []
   const missing = d?.comparison.filter((c) => c.missing) ?? []
   const amendment = d?.amendment ?? row?.amendment ?? null
 
@@ -132,7 +132,7 @@ function CaseDrawer({ row, onClose }: { row: EmailRow | null; onClose: () => voi
         ) : (
           <div className="space-y-6">
             <section>
-              <div className="eyebrow mb-2">AI finding</div>
+              <div className="eyebrow mb-2">Finding</div>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={d.status} resolved={bucket === 'resolved'} />
                 {d.review_reason && <Badge tone="warn">{REASON_LABEL[d.review_reason]}</Badge>}

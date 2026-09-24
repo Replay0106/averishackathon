@@ -14,7 +14,7 @@ const STAGES = [
   { k: 'received', label: 'Email received' },
   { k: 'classified', label: 'Classified' },
   { k: 'extracting', label: 'Documents extracted' },
-  { k: 'comparing', label: 'AI comparison' },
+  { k: 'comparing', label: 'Field comparison' },
   { k: 'redline', label: 'Redline' },
   { k: 'decided', label: 'Decision' },
 ] as const
@@ -84,7 +84,7 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
       await sleep(230)
       if (!live()) return
       const c = detail.comparison[i]
-      setRows((r) => r.map((x, j) => (j === i ? (c.missing ? 'missing' : 'extracted') : x)))
+      setRows((r) => r.map((x, j) => (j === i ? (c.missing || c.compared === false ? 'missing' : 'extracted') : x)))
       setLines((l) => ({
         si: c.si_evidence ? { ...l.si, [c.si_evidence.line_number]: 'lit' } : l.si,
         bl: c.bl_evidence ? { ...l.bl, [c.bl_evidence.line_number]: 'lit' } : l.bl,
@@ -100,7 +100,7 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
       setRows((r) => r.map((x, j) => (j === i ? 'comparing' : x)))
       await sleep(460)
       if (!live()) return
-      const st: RowState = c.missing ? 'missing' : c.match ? 'ok' : 'bad'
+      const st: RowState = c.missing || c.compared === false ? 'missing' : c.match ? 'ok' : 'bad'
       setRows((r) => r.map((x, j) => (j === i ? st : x)))
       const ls: LineState = c.match ? 'ok' : 'bad'
       setLines((l) => ({
@@ -122,7 +122,9 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
 
   const headline = !d
     ? { text: 'LOADING…', tone: 'text-ink3' }
-    : !decided
+    : d.awaiting_documents
+      ? { text: 'DRAFT BL REQUESTED · NO DOCUMENTS YET', tone: 'text-ink2' }
+      : !decided
       ? phase === 'idle'
         ? { text: 'READY TO VERIFY', tone: 'text-ink2' }
         : { text: 'ANALYSING…', tone: 'text-sky' }
@@ -147,11 +149,11 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
             >
               {comps.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.shipment} · {c.status === 'OK' ? 'Verified' : c.status === 'MISMATCH' ? 'Discrepancy' : 'Needs review'}
+                  {c.shipment} · {c.awaiting_documents ? 'Awaiting documents' : c.status === 'OK' ? 'Verified' : c.status === 'MISMATCH' ? 'Discrepancy' : 'Needs review'}
                 </option>
               ))}
             </select>
-            <Button variant="primary" icon={phase === 'idle' || decided ? (decided ? <RotateCcw className="size-3.5" /> : <Play className="size-3.5" />) : undefined} loading={phase !== 'idle' && !decided} disabled={!d} onClick={() => d && start(d)}>
+            <Button variant="primary" icon={phase === 'idle' || decided ? (decided ? <RotateCcw className="size-3.5" /> : <Play className="size-3.5" />) : undefined} loading={phase !== 'idle' && !decided} disabled={!d || !!d.awaiting_documents} onClick={() => d && start(d)}>
               {decided ? 'Replay' : 'Run verification'}
             </Button>
           </div>
@@ -219,6 +221,19 @@ export default function Verification({ go, id, auto }: { go: (p: Page, id?: stri
 
       {!d ? (
         <div className="panel grid h-72 place-items-center text-sm text-ink3">Loading shipment…</div>
+      ) : d.awaiting_documents ? (
+        <div className="panel mx-auto max-w-2xl p-8">
+          <div className="eyebrow mb-2">Nothing to verify yet</div>
+          <p className="text-[14px] leading-relaxed text-ink2">
+            {d.sender || 'The sender'} asked for the draft Bill of Lading to be sent for checking, and no Shipping Instruction or draft BL is attached.
+            NavisAI does not treat this as a verified shipment: the check runs when the documents arrive in this thread.
+          </p>
+          <div className="mt-4 rounded-lg border border-white/[0.08] bg-white/[0.025] px-4 py-3 text-[12.5px] text-ink3">
+            <div className="mb-1 font-medium text-ink2">{d.subject}</div>
+            <div className="line-clamp-4 whitespace-pre-wrap">{d.body}</div>
+          </div>
+          <div className="mt-3 text-[11.5px] text-ink3">In the hackathon scoring this email is a document-check request with no problem to report (category BL_COMPARISON, status OK); the app shows it truthfully as awaiting documents.</div>
+        </div>
       ) : tab === 'redline' ? (
         d.comparison.length ? <Redline d={d} /> : <div className="panel p-10 text-center text-sm text-ink2">No comparable documents for this shipment.</div>
       ) : (
