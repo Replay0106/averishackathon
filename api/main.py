@@ -93,6 +93,81 @@ async def rate_limit_middleware(request: Request, call_next):
 
 classifier = EmailClassifier()
 extractor = FieldExtractor()
+
+
+class _GeminiBackfill:
+    """Emails that no rule matches are classified by Gemini here, off the request path: queued emails are sent in
+    batches of EmailClassifier.BATCH, a rate-limited key is waited out, and when a batch finishes the affected
+    results are dropped from their dataset's cache so the next read picks up the answer. An email whose request
+    failed stays GENERAL and is queued again only after RETRY_S."""
+
+    RETRY_S = 600
+
+    def __init__(self):
+        import queue
+
+        self._q: "queue.Queue" = queue.Queue()
+        self._waiting: Dict[str, List[tuple]] = {}  # email fingerprint -> [(dataset, email id)]
+        self._failed: Dict[str, float] = {}  # fingerprint -> when its request failed
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+
+    def pending(self, email: Dict[str, Any]) -> bool:
+        return EmailClassifier.fingerprint(email) in self._waiting
+
+    def enqueue(self, d: "Dataset", eid: str, email: Dict[str, Any]) -> bool:
+        """Queues the email; True while Gemini's answer is still to come."""
+        key = EmailClassifier.fingerprint(email)
+        with self._lock:
+            if time.monotonic() - self._failed.get(key, -1e9) < self.RETRY_S:
+                return False
+            if key in self._waiting:
+                self._waiting[key].append((d, eid))
+                return True
+            self._waiting[key] = [(d, eid)]
+            self._q.put(email)
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(target=self._run, name="gemini-backfill", daemon=True)
+                self._thread.start()
+        return True
+
+    def _run(self) -> None:
+        import queue
+
+        while True:
+            try:
+                batch = [self._q.get(timeout=30)]
+            except queue.Empty:
+                return
+            while len(batch) < classifier.BATCH:
+                try:
+                    batch.append(self._q.get(timeout=0.3))  # gather what arrives together, without holding it back
+                except queue.Empty:
+                    break
+            got = classifier.llm_labels(batch, wait_s=120)
+            with self._lock:
+                for i, e in enumerate(batch):
+                    key = EmailClassifier.fingerprint(e)
+                    if i not in got:
+                        self._failed[key] = time.monotonic()
+                    for d, eid in self._waiting.pop(key, []):
+                        d.cache.pop(eid, None)
+
+
+gemini_backfill = _GeminiBackfill()
+
+
+def classify(d: "Dataset", eid: str, email: Dict[str, Any]) -> tuple:
+    """(category, source): source is "rules", "gemini", or "pending" while Gemini's answer is still to come. Rules
+    answer at once; an email no rule matches uses Gemini's cached answer, or is queued for it and stays GENERAL
+    meanwhile."""
+    category = classifier.rule_category(email)
+    if category != "GENERAL" or not classifier._llm_enabled():
+        return category, "rules"
+    hit = classifier.cached_llm_label(email)
+    if hit:
+        return hit, "gemini"
+    return "GENERAL", "pending" if gemini_backfill.enqueue(d, eid, email) else "rules"
 reconciler = DocumentReconciler()
 try:
     # Supabase when SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set, local files otherwise.
@@ -304,6 +379,7 @@ def _blank(d: Dataset, eid: str, email: Dict[str, Any], category: str) -> Dict[s
         "comparison": [],
         "meta": {"booking": None, "vessel": None, "oc_no": None, "carrier": "n/a"},
         "awaiting_documents": False,
+        "category_source": "rules",
     }
 
 
@@ -329,8 +405,9 @@ def run_email(d: Dataset, eid: str) -> Dict[str, Any]:
         return r
     t0 = time.perf_counter()
     email = d.loader.get_email(eid)
-    category = classifier.classify_email(email)
+    category, source = classify(d, eid, email)
     result = _blank(d, eid, email, category)
+    result["category_source"] = source
     if category == "BL_COMPARISON":
         try:
             si, bl, ambiguous = _pick_docs(d, email)
@@ -483,7 +560,7 @@ def _summary_row(d: Dataset, r: Dict[str, Any], amends: Optional[Dict[str, Dict[
     amends = amends if amends is not None else {}
     keys = ("id", "shipment", "sender", "subject", "category", "status", "review_reason", "defect_fields", "confidence", "attachments", "meta",
             "awaiting_documents")
-    return {k: r[k] for k in keys} | {
+    return {k: r[k] for k in keys} | {"category_source": r.get("category_source", "rules"),
         "resolution": _resolution(d, r["id"], amends),
         "amendment": _amendment_view(amends.get(r["id"])),
         "case": _case_info(d, r),

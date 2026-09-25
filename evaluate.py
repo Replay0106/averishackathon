@@ -142,7 +142,7 @@ def run_system(dataset: Path, key: Dict[str, Dict[str, Any]], vision: bool, prog
     from sdoc_reconciler import DocumentReconciler, select_documents
 
     loader = InboxLoader(str(dataset))
-    classifier = EmailClassifier()
+    classifier = EmailClassifier(use_llm=False)  # the rules alone; the LLM is measured separately
     if vision:
         extractor = FieldExtractor()
     else:  # no key and an empty cache: scanned documents cannot be read, exactly like an offline deployment

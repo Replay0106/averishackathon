@@ -1,4 +1,5 @@
 """Ask Navis: every answer is read from the results it is given, and unknown questions get help, not a guess."""
+import os
 import unittest
 from datetime import datetime, timezone
 
@@ -260,8 +261,16 @@ class ClassifierFallback(unittest.TestCase):
                 self.mock.patch.object(self.llm, "generate_json", return_value=reply) as gen:
             return EmailClassifier().classify_email(self.email), gen.call_count
 
-    def test_off_by_default(self):
+    def test_switched_off(self):
         self.assertEqual(self.classify({"NAVIS_LLM_CLASSIFIER": "0"}, ({"e1": "SPAM"}, {"ok": True})), ("GENERAL", 0))
+
+    def test_on_by_default_when_a_key_is_configured(self):
+        with self.mock.patch.dict("os.environ"):
+            os.environ.pop("NAVIS_LLM_CLASSIFIER", None)
+            self.assertEqual(self.classify({}, ({"e1": "SPAM"}, {"ok": True})), ("SPAM", 1))
+
+    def test_gemini_cannot_start_a_document_check(self):
+        self.assertEqual(self.classify({"NAVIS_LLM_CLASSIFIER": "1"}, ({"e1": "BL_COMPARISON"}, {"ok": True})), ("GENERAL", 1))
 
     def test_when_enabled_only_unmatched_emails_are_sent(self):
         self.assertEqual(self.classify({"NAVIS_LLM_CLASSIFIER": "1"}, ({"e1": "si_request"}, {"ok": True})), ("SI_REQUEST", 1))

@@ -33,6 +33,7 @@ except ImportError:
 
 import sdoc_store
 from sdoc_loader import AttachmentData
+from sdoc_textnorm import normalize_document_text
 
 try:
     from dotenv import load_dotenv
@@ -284,7 +285,9 @@ class FieldExtractor:
                 return
 
     def _extract_via_text(self, att: AttachmentData) -> ExtractedDocFields:
-        text = att.text
+        # Damaged or unusual layouts (typos in labels, HTML, tables, cover sheets...) are rewritten to plain
+        # "Label: value" lines first. raw_text keeps this cleaned text so evidence line numbers point into it.
+        text = normalize_document_text(att.text)
         doc_type = att.detected_doc_type
         fields = ExtractedDocFields(doc_type=doc_type, raw_text=text)
 
@@ -297,7 +300,7 @@ class FieldExtractor:
                 fields.missing_field_name = "shipper"
             else:
                 fields.shipper = val
-                self._record_evidence(fields, "shipper", val, r"Shipper|Exporter", text)
+                self._record_evidence(fields, "shipper", val, r"Shipper|Exporter", text, hint=raw_val.strip())
 
         # 2. Consignee
         raw_val = self._find_field(r"Consignee|To the Order of|CONSIGNEE", text)
@@ -308,7 +311,7 @@ class FieldExtractor:
                 fields.missing_field_name = "consignee"
             else:
                 fields.consignee = val
-                self._record_evidence(fields, "consignee", val, r"Consignee|To the Order of|CONSIGNEE", text)
+                self._record_evidence(fields, "consignee", val, r"Consignee|To the Order of|CONSIGNEE", text, hint=raw_val.strip())
 
         # 3. Notify Party
         raw_val = self._find_field(r"Notify\s*Party|Party\s+to\s+Notify|Notify|NOTIFY", text)
@@ -319,7 +322,7 @@ class FieldExtractor:
                 fields.missing_field_name = "notify_party"
             else:
                 fields.notify_party = val
-                self._record_evidence(fields, "notify_party", val, r"Notify\s*Party|Party\s+to\s+Notify|Notify|NOTIFY", text)
+                self._record_evidence(fields, "notify_party", val, r"Notify\s*Party|Party\s+to\s+Notify|Notify|NOTIFY", text, hint=raw_val.strip())
 
         # 4. Port of Loading (POL)
         raw_val = self._find_field(r"Port of Loading|Load Port|POL|Port of Load", text)
@@ -330,7 +333,7 @@ class FieldExtractor:
                 fields.missing_field_name = "port_of_loading"
             else:
                 fields.port_of_loading = val
-                self._record_evidence(fields, "port_of_loading", val, r"Port of Loading|Load Port|POL|Port of Load", text)
+                self._record_evidence(fields, "port_of_loading", val, r"Port of Loading|Load Port|POL|Port of Load", text, hint=raw_val.strip())
 
         # 5. Port of Discharge (POD)
         raw_val = self._find_field(r"Port of Discharge|Discharge Port|POD|Port of Disch", text)
@@ -341,7 +344,7 @@ class FieldExtractor:
                 fields.missing_field_name = "port_of_discharge"
             else:
                 fields.port_of_discharge = val
-                self._record_evidence(fields, "port_of_discharge", val, r"Port of Discharge|Discharge Port|POD|Port of Disch", text)
+                self._record_evidence(fields, "port_of_discharge", val, r"Port of Discharge|Discharge Port|POD|Port of Disch", text, hint=raw_val.strip())
 
         # 6. Container Count
         raw_val = self._find_field(r"Total Containers|Container Count|No\.?\s*of Containers|Containers?|Equipment|Packages?", text)
@@ -354,7 +357,7 @@ class FieldExtractor:
                 parsed_cnt = self._parse_container_count(raw_c)
                 if parsed_cnt is not None:
                     fields.container_count = parsed_cnt
-                    self._record_evidence(fields, "container_count", parsed_cnt, r"Containers?|Packages?", text)
+                    self._record_evidence(fields, "container_count", parsed_cnt, r"Containers?|Packages?|Equipment", text, hint=raw_c)
                 else:
                     fields.has_missing_placeholder = True
                     fields.missing_field_name = "container_count"

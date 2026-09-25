@@ -36,8 +36,8 @@ function Expanded({ row, go }: { row: EmailRow; go: (p: Page, id?: string, auto?
           <div>
             <div className="eyebrow mb-2">Classification</div>
             <div className="mb-1.5 flex items-center justify-between">
-              <Badge tone={CAT_TONE[row.category]}>{CATEGORY_LABEL[row.category]}</Badge>
-              <span className="text-[11px] text-ink3">rule-based</span>
+              {row.category_source === 'pending' ? <Badge>Classifying…</Badge> : <Badge tone={CAT_TONE[row.category]}>{CATEGORY_LABEL[row.category]}</Badge>}
+              <span className="text-[11px] text-ink3">{row.category_source === 'gemini' ? 'Gemini (no rule matched)' : row.category_source === 'pending' ? 'asking Gemini' : 'rule-based'}</span>
             </div>
             <div className="text-[11.5px] text-ink3">Decided by fixed rules on the subject, body and attachment names.</div>
           </div>
@@ -199,7 +199,7 @@ export default function Inbox({ go, initialId }: { go: (p: Page, id?: string, au
                     {e.attachments.length > 0 && <Paperclip className="size-3 shrink-0 text-ink3" />}
                   </div>
                   <div className="num text-[11.5px] text-ink3 max-lg:hidden">{t.toISOString().slice(11, 16)} UTC</div>
-                  <div className="max-lg:hidden"><Badge tone={CAT_TONE[e.category]}>{CATEGORY_LABEL[e.category]}</Badge></div>
+                  <div className="max-lg:hidden">{e.category_source === 'pending' ? <Badge>Classifying…</Badge> : <Badge tone={CAT_TONE[e.category]}>{CATEGORY_LABEL[e.category]}</Badge>}</div>
                   <div>{e.category === 'BL_COMPARISON' ? <StatusBadge status={e.status} resolved={!!resolutions[e.id]} awaiting={e.awaiting_documents} /> : <Badge>Filed</Badge>}</div>
                 </button>
                 <AnimatePresence initial={false}>{isOpen && <Expanded row={e} go={go} />}</AnimatePresence>

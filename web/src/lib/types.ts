@@ -50,6 +50,7 @@ export interface EmailRow {
   attachments: string[]
   meta: Meta
   awaiting_documents?: boolean // a request to send the draft BL, with nothing attached yet
+  category_source?: 'rules' | 'gemini' | 'pending' // who decided the category; pending while Gemini's answer is queued
   resolution?: Resolution | null
   amendment?: Amendment | null
   case?: CaseInfo | null

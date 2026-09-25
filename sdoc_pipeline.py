@@ -56,13 +56,15 @@ def run_pipeline(bundle_dir: str, output_path: str = "submission.json", server_u
     stats_defects = Counter()
 
     start_time = time.time()
+    # Rules for every email, then one Gemini request per batch of emails no rule matched
+    labels = dict(zip(email_ids, classifier.classify_many([loader.get_email(e) for e in email_ids])))
 
     for idx, eid in enumerate(email_ids, 1):
         if idx % 50 == 0 or idx == total_emails:
             print(f"  [{idx}/{total_emails}] Processing {eid}...")
 
         email = loader.get_email(eid)
-        category = classifier.classify_email(email)
+        category = labels[eid]
         stats_categories[category] += 1
 
         if category != "BL_COMPARISON":

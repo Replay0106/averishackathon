@@ -255,8 +255,11 @@ class InboxLoader:
             att.error_message = f"XLSX parsing error: {e}"
 
     def _detect_doc_type(self, text: str, filename: str) -> str:
-        """Determines document type based on content first, then filename fallback."""
-        upper = text.upper()
+        """Determines document type based on content first, then filename fallback. A cover sheet or blank sample in
+        front of the document title ("COMMERCIAL INVOICE: NOT INCLUDED") does not decide the type."""
+        from sdoc_textnorm import strip_cover
+
+        upper = strip_cover(text.replace("\r\n", "\n").replace("\r", "\n")).upper()
         # Content header checks
         if "COMMERCIAL INVOICE" in upper or "INVOICE NO" in upper:
             return "INVOICE"
